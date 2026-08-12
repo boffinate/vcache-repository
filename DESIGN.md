@@ -22,7 +22,7 @@ Build a fresh family/target tree. Upload the public key if absent, then package 
 
 The manual publisher runs in the route's native Debian, Ubuntu or AlmaLinux utility container and installs only the required format tools before invoking the scripts. Native client smoke runs in a fresh container on the same native runner; v1 does not add a long-lived build image.
 
-APT uses `reprepro` with `SignWith`, and verifies `Release`, `Release.gpg`, and `InRelease`. RPM payloads use `rpmsign` and `rpmkeys`; `createrepo_c` metadata is accompanied by armored `repomd.xml.asc`. Generated clients require `gpgcheck=1`, `repo_gpgcheck=1`, TLS verification, and an explicit APT `Signed-By` path.
+APT uses `reprepro` with `SignWith`, and verifies `Release`, `Release.gpg`, and `InRelease`. RPM payloads use `rpmsign`; validation requires `rpmkeys --checksig --verbose` to report an `OK` OpenPGP signature, because digest-only success is not a signature. `createrepo_c` metadata is accompanied by armored `repomd.xml.asc`. Generated clients require `gpgcheck=1`, `repo_gpgcheck=1`, TLS verification, and an explicit APT `Signed-By` path.
 
 ## Retry contract
 

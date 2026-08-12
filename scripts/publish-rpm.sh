@@ -18,6 +18,12 @@ TREE="$TMP/tree"
 RPMDB="$TMP/rpmdb"
 mkdir -p "$TREE/Packages" "$RPMDB"
 
+verify_rpm_signature() {
+  local package=$1 output
+  output=$(LC_ALL=C rpmkeys --dbpath "$RPMDB" --checksig --verbose "$package") || die "RPM signature is invalid: ${package##*/}"
+  grep -Eq 'Signature.*: OK$' <<<"$output" || die "RPM has no verified OpenPGP signature: ${package##*/}"
+}
+
 gpg_setup "$TMP/gnupg"
 verify_public_key "$ROOT/keys/vcache-archive-keyring.asc"
 rpm --dbpath "$RPMDB" --import "$ROOT/keys/vcache-archive-keyring.asc"
@@ -36,14 +42,14 @@ for source in "${packages[@]}"; do
     r2_get "$existing" "$object_key"
     existing_meta=$(rpm -qp --qf '%{NEVRA}\t%{SHA256HEADER}\t%{PAYLOADDIGEST}\n' "$existing") || die "existing RPM object is unreadable: $base"
     [[ $existing_meta == "$source_meta" ]] || die "immutable RPM collision at $object_key; bump package_revision"
-    rpmkeys --dbpath "$RPMDB" --checksig --verbose "$existing" >/dev/null || die "existing RPM signature is invalid: $base"
+    verify_rpm_signature "$existing"
     cp "$existing" "$signed"
   else
     rc=$?
     (( rc == 1 )) || die "could not check immutable RPM object: $object_key"
     cp "$source" "$signed"
     rpmsign --define "_gpg_name $REPOSITORY_GPG_FINGERPRINT" --addsign "$signed" >/dev/null
-    rpmkeys --dbpath "$RPMDB" --checksig --verbose "$signed" >/dev/null || die "new RPM signature is invalid: $base"
+    verify_rpm_signature "$signed"
   fi
 done
 

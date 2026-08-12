@@ -5,6 +5,7 @@ source "$SCRIPT_DIR/lib.sh"
 smoke_setup rpm "$@"
 URL=$REPOSITORY_PUBLIC_URL
 docker run --rm --platform "$PLATFORM" -v "$STAGE:/stage:ro" "$IMAGE" bash -euxo pipefail -c '
+  dnf --version
   dnf -y install ca-certificates curl-minimal gnupg2
   /usr/bin/curl --fail --silent --show-error "$0/vcache-archive-keyring.asc" -o /etc/pki/rpm-gpg/vcache-archive-keyring.asc
   test "$(gpg --show-keys --with-colons /etc/pki/rpm-gpg/vcache-archive-keyring.asc | awk -F: '\''$1 == "fpr" {print $10; exit}'\'')" = "$3"

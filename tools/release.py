@@ -206,6 +206,8 @@ def fetch_asset(url: str, destination: Path) -> None:
 def fetch(tag: str, stage: Path, route_file: Path) -> None:
     table = routes(route_file)
     route_for_tag(tag, table)
+    if stage.exists() and any(stage.iterdir()):
+        raise ValidationError("release stage must be empty")
     release = api_json(f"/repos/{PRODUCER_REPO}/releases/tags/{urllib.parse.quote(tag, safe='')}")
     if release.get("draft") or release.get("prerelease"):
         raise ValidationError("release must be non-draft and non-prerelease")

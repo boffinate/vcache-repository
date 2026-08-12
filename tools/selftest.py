@@ -77,12 +77,16 @@ def test_workflow_keeps_secrets_after_validation() -> None:
     expect("*-el10" not in workflow and "needs.fetch.outputs.publisher" in workflow,
            "workflow dispatch is driven by the validated route format")
     recheck = workflow.index("Recheck before secrets are used")
+    install = workflow.index("Install container publication tools")
     publish = workflow.index("REPOSITORY_GPG_PRIVATE_KEY_B64:", recheck)
-    expect(recheck < publish, "validated transfer is rechecked before the secret-bearing step")
+    expect(install < recheck < publish, "publication tools precede the recheck and secret-bearing step")
+    expect("GITHUB_TOKEN: ${{ github.token }}" in workflow, "GitHub release fetch is authenticated")
+    expect("retention-days: 1" in workflow, "unsigned package handoff has minimal retention")
     scripts = "\n".join(path.read_text() for path in (root / "scripts").glob("*.sh"))
     for forbidden in ("sync --delete", "trusted=yes", "gpgcheck=0", "repo_gpgcheck=0"):
         expect(forbidden not in scripts, f"forbidden publication option: {forbidden}")
     expect("--if-none-match '*'" in scripts, "immutable objects use atomic conditional creation")
+    expect("Signature.*: OK$" in scripts, "RPM validation requires a verified OpenPGP signature")
     expect("*/vinyl-cache" in (root / "scripts/lib.sh").read_text(),
            "the public URL must name the fixed R2 object prefix")
 
