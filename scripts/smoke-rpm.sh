@@ -2,14 +2,8 @@
 set -euo pipefail
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 source "$SCRIPT_DIR/lib.sh"
-[[ $# -eq 2 ]] || die "usage: $0 <validated-stage> <repository-public-url>"
-STAGE=$(CDPATH= cd -- "$1" && pwd)
-URL=${2%/}
-REPOSITORY_PUBLIC_URL=$URL
-check_public_url
-stage_route "$STAGE"
-[[ $FORMAT == rpm ]] || die "not an RPM target"
-need docker
+smoke_setup rpm "$@"
+URL=$REPOSITORY_PUBLIC_URL
 docker run --rm --platform "$PLATFORM" -v "$STAGE:/stage:ro" "$IMAGE" bash -euxo pipefail -c '
   dnf -y install ca-certificates curl-minimal gnupg2
   /usr/bin/curl --fail --silent --show-error "$0/vcache-archive-keyring.asc" -o /etc/pki/rpm-gpg/vcache-archive-keyring.asc

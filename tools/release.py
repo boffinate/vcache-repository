@@ -43,7 +43,7 @@ def routes(path: Path) -> dict[str, dict[str, str]]:
     return out
 
 
-def route_for_tag(tag: str, table: dict[str, dict[str, str]]) -> tuple[str, str, dict[str, str]]:
+def route_for_tag(tag: str, table: dict[str, dict[str, str]]) -> tuple[str, str, str, dict[str, str]]:
     if not TAG_RE.fullmatch(tag):
         raise ValidationError("source tag contains unsafe characters")
     matches = [(target, tag[: -(len(target) + 1)]) for target in table if tag.endswith("-" + target)]
@@ -53,9 +53,10 @@ def route_for_tag(tag: str, table: dict[str, dict[str, str]]) -> tuple[str, str,
     family = engine.split("-", 1)[0]
     if family not in ("vinyl", "varnish"):
         raise ValidationError(f"unsupported engine family {family!r}")
-    if not engine[len(family) + 1:]:
+    engine_version = engine[len(family) + 1:]
+    if not engine_version:
         raise ValidationError("source tag has no engine version")
-    return family, target, table[target]
+    return family, engine_version, target, table[target]
 
 
 def sha256(path: Path) -> str:
@@ -111,11 +112,14 @@ def _run(args: list[str]) -> str:
 
 def package_metadata(path: Path, fmt: str) -> dict[str, str]:
     if fmt == "deb":
-        values = [_run(["dpkg-deb", "-f", str(path), field])
-                  for field in ("Package", "Version", "Architecture")]
-        if any(not value or "\n" in value for value in values):
+        lines = _run(["dpkg-deb", "-f", str(path), "Package", "Version", "Architecture"])
+        try:
+            values = dict(line.split(": ", 1) for line in lines.splitlines())
+        except ValueError as exc:
+            raise ValidationError(f"invalid Debian metadata in {path.name}") from exc
+        if set(values) != {"Package", "Version", "Architecture"} or not all(values.values()):
             raise ValidationError(f"invalid Debian metadata in {path.name}")
-        return {"name": values[0], "version": values[1], "arch": values[2], "release": ""}
+        return {"name": values["Package"], "version": values["Version"], "arch": values["Architecture"], "release": ""}
     line = _run(["rpm", "-qp", "--qf", "%{NAME}\n%{VERSION}\n%{RELEASE}\n%{ARCH}\n", str(path)])
     values = line.splitlines()
     if len(values) != 4:
@@ -158,12 +162,11 @@ def package_revision(meta: dict[str, str], family: str, engine_version: str, fmt
 
 def validate_stage(stage: Path, tag: str, route_file: Path) -> None:
     table = routes(route_file)
-    family, target, route = route_for_tag(tag, table)
+    family, engine_version, target, route = route_for_tag(tag, table)
     digests = checksum_map(stage)
     package_paths = sorted(stage / name for name in digests)
     if any(p.suffix != ("." + route["format"]) for p in package_paths):
         raise ValidationError("release mixes package formats or disagrees with route")
-    engine_version = tag[: -(len(target) + 1)].split("-", 1)[1]
     revisions = set()
     for path in package_paths:
         meta = package_metadata(path, route["format"])
@@ -227,7 +230,7 @@ def verify_command(stage: Path, route_file: Path) -> None:
 
 def describe(stage: Path, route_file: Path) -> None:
     tag = (stage / ".source-tag").read_text().strip()
-    family, target, route = route_for_tag(tag, routes(route_file))
+    family, _, target, route = route_for_tag(tag, routes(route_file))
     print("\t".join((family, target, route["format"], route["arch"], route["image"], route["platform"])))
 
 

@@ -2,14 +2,8 @@
 set -euo pipefail
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 source "$SCRIPT_DIR/lib.sh"
-[[ $# -eq 2 ]] || die "usage: $0 <validated-stage> <repository-public-url>"
-STAGE=$(CDPATH= cd -- "$1" && pwd)
-URL=${2%/}
-REPOSITORY_PUBLIC_URL=$URL
-check_public_url
-stage_route "$STAGE"
-[[ $FORMAT == deb ]] || die "not a Debian target"
-need docker; need_env REPOSITORY_GPG_FINGERPRINT
+smoke_setup deb "$@"
+URL=$REPOSITORY_PUBLIC_URL
 docker run --rm --platform "$PLATFORM" -v "$STAGE:/stage:ro" "$IMAGE" bash -euxo pipefail -c '
   apt-get update
   apt-get install -y --no-install-recommends ca-certificates curl gnupg

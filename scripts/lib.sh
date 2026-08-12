@@ -2,11 +2,11 @@
 set -euo pipefail
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
-ROUTES=${ROUTES:-$ROOT/routes.tsv}
 
 die() { echo "error: $*" >&2; exit 2; }
 need() { command -v "$1" >/dev/null 2>&1 || die "missing command: $1"; }
 need_env() { [[ -n ${!1:-} ]] || die "missing environment variable: $1"; }
+sha256_file() { sha256sum "$1" | awk '{print $1}'; }
 check_public_url() {
   need_env REPOSITORY_PUBLIC_URL
   local normal=${REPOSITORY_PUBLIC_URL,,}
@@ -49,22 +49,18 @@ r2_get() { aws "${AWS_ARGS[@]}" s3 cp "$(r2_uri "$2")" "$1" --only-show-errors; 
 r2_put() { aws "${AWS_ARGS[@]}" s3 cp "$1" "$(r2_uri "$2")" --only-show-errors --content-type "$3"; }
 
 r2_immutable_once() {
-  local source=$1 key=$2 expected=$3 content_type=$4 collision=$5 existing rc actual
-  if r2_exists "$key"; then
-    existing=$(mktemp)
-    r2_get "$existing" "$key"
-    actual=$(sha256sum "$existing" | awk '{print $1}')
-    [[ $actual == "$expected" ]] || { rm -f "$existing"; die "$collision"; }
-    rm -f "$existing"
-  else
-    rc=$?
-    (( rc == 1 )) || die "could not check immutable object: $key"
-    r2_put "$source" "$key" "$content_type"
-  fi
+  local source=$1 key=$2 expected=$3 content_type=$4 collision=$5 existing output actual
+  if output=$(aws "${AWS_ARGS[@]}" s3api put-object --bucket "$R2_BUCKET" --key "$key" --body "$source" --content-type "$content_type" --if-none-match '*' 2>&1); then return; fi
+  grep -Eqi '(^|[^0-9])412([^0-9]|$)|preconditionfailed' <<<"$output" || { printf '%s\n' "$output" >&2; die "could not create immutable object: $key"; }
+  existing=$(mktemp)
+  r2_get "$existing" "$key"
+  actual=$(sha256_file "$existing")
+  [[ $actual == "$expected" ]] || { rm -f "$existing"; die "$collision"; }
+  rm -f "$existing"
 }
 
 r2_public_key_once() {
-  r2_immutable_once "$1" "$2" "$(sha256sum "$1" | awk '{print $1}')" "application/pgp-keys" "public key object differs from checked-in certificate"
+  r2_immutable_once "$1" "$2" "$(sha256_file "$1")" "application/pgp-keys" "public key object differs from checked-in certificate"
 }
 
 r2_package_once() {
@@ -104,6 +100,16 @@ verify_public_key() {
   local key=$1 actual
   actual=$(gpg --batch --show-keys --with-colons "$key" | awk -F: '$1 == "fpr" {print $10; exit}')
   [[ $actual == "$REPOSITORY_GPG_FINGERPRINT" ]] || die "checked-in public key fingerprint mismatch"
+}
+
+smoke_setup() {
+  [[ $# -eq 3 ]] || die "usage: $0 <validated-stage> <repository-public-url>"
+  STAGE=$(CDPATH= cd -- "$2" && pwd)
+  REPOSITORY_PUBLIC_URL=${3%/}
+  check_public_url
+  stage_route "$STAGE"
+  [[ $FORMAT == "$1" ]] || die "stage format is $FORMAT, expected $1"
+  need docker; need_env REPOSITORY_GPG_FINGERPRINT
 }
 
 upload_tree() {

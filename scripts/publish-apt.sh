@@ -52,7 +52,7 @@ while IFS= read -r -d '' pool_file; do
   base=${pool_file##*/}
   source_file="$STAGE/$base"
   [[ -f "$source_file" ]] || die "generated pool file has no source asset: $base"
-  expected=$(sha256sum "$source_file" | awk '{print $1}')
+  expected=$(sha256_file "$source_file")
   r2_package_once "$pool_file" "$PREFIX/${pool_file#"$TREE"/}" "$expected"
 done < <(find "$TREE/pool" -type f -print0 | sort -z)
 

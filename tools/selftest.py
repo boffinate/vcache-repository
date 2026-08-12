@@ -22,8 +22,9 @@ def rejects(call, message: str) -> None:
 
 def test_routes_and_tag() -> None:
     table = release.routes(Path(__file__).parents[1] / "routes.tsv")
-    family, target, route = release.route_for_tag("vinyl-42.3.7-debian-13-amd64", table)
-    expect((family, target, route["format"], route["arch"]) == ("vinyl", "debian-13-amd64", "deb", "amd64"), "route resolution")
+    family, version, target, route = release.route_for_tag("vinyl-42.3.7-debian-13-amd64", table)
+    expect((family, version, target, route["format"], route["arch"]) ==
+           ("vinyl", "42.3.7", "debian-13-amd64", "deb", "amd64"), "route resolution")
     for bad in ("vinyl-42.3.7-nope", "../x-debian-13-amd64", "varnish-el10-x86_64"):
         rejects(lambda: release.route_for_tag(bad, table), f"unsafe or unknown tag accepted: {bad}")
 
@@ -81,6 +82,7 @@ def test_workflow_keeps_secrets_after_validation() -> None:
     scripts = "\n".join(path.read_text() for path in (root / "scripts").glob("*.sh"))
     for forbidden in ("sync --delete", "trusted=yes", "gpgcheck=0", "repo_gpgcheck=0"):
         expect(forbidden not in scripts, f"forbidden publication option: {forbidden}")
+    expect("--if-none-match '*'" in scripts, "immutable objects use atomic conditional creation")
     expect("*/vinyl-cache" in (root / "scripts/lib.sh").read_text(),
            "the public URL must name the fixed R2 object prefix")
 

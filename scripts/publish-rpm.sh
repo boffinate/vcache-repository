@@ -68,7 +68,7 @@ PREFIX="vinyl-cache/rpm/$FAMILY/$TARGET"
 r2_public_key_once "$ROOT/keys/vcache-archive-keyring.asc" "vinyl-cache/vcache-archive-keyring.asc"
 while IFS= read -r -d '' signed; do
   base=${signed##*/}
-  r2_package_once "$signed" "$PREFIX/Packages/$base" "$(sha256sum "$signed" | awk '{print $1}')"
+  r2_package_once "$signed" "$PREFIX/Packages/$base" "$(sha256_file "$signed")"
 done < <(find "$TREE/Packages" -type f -print0 | sort -z)
 while IFS= read -r -d '' file; do
   rel=${file#"$TREE"/}
