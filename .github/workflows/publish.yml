@@ -1,0 +1,113 @@
+name: Publish signed repositories
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_tag:
+        description: "Completed producer tag, for example vinyl-X.Y.Z-el10-x86_64"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash -euo pipefail {0}
+
+concurrency:
+  group: vcache-repository-publish
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-24.04
+    outputs:
+      format: ${{ steps.route.outputs.format }}
+      publisher: ${{ steps.route.outputs.publisher }}
+      image: ${{ steps.route.outputs.image }}
+      runner: ${{ steps.route.outputs.runner }}
+    env:
+      SOURCE_TAG: ${{ inputs.source_tag }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - run: python3 tools/selftest.py
+      - name: Fetch and validate release
+        run: |
+          mkdir -p work/release
+          scripts/fetch-release.sh "$SOURCE_TAG" work/release
+      - name: Select native route
+        id: route
+        run: |
+          IFS=$'\t' read -r family target format arch image platform < <(scripts/fetch-release.sh --describe work/release)
+          case "$platform" in
+            linux/amd64) runner=ubuntu-24.04 ;;
+            linux/arm64) runner=ubuntu-24.04-arm ;;
+            *) exit 2 ;;
+          esac
+          if [ "$format" = deb ]; then publisher=apt; else publisher=rpm; fi
+          echo "format=$format" >> "$GITHUB_OUTPUT"
+          echo "publisher=$publisher" >> "$GITHUB_OUTPUT"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "runner=$runner" >> "$GITHUB_OUTPUT"
+      - name: Transfer validated release
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: validated-release
+          path: work/release
+          include-hidden-files: true
+          if-no-files-found: error
+
+  publish:
+    needs: fetch
+    runs-on: ${{ needs.fetch.outputs.runner }}
+    container: ${{ needs.fetch.outputs.image }}
+    environment:
+      name: production
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Download validated release
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: validated-release
+          path: work/release
+      - name: Recheck before secrets are used
+        run: scripts/fetch-release.sh --verify work/release
+      - name: Install container publication tools
+        env:
+          PACKAGE_FORMAT: ${{ needs.fetch.outputs.format }}
+        run: |
+          if [ "$PACKAGE_FORMAT" = deb ]; then
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends awscli gnupg python3 reprepro
+          else
+            dnf -y install awscli2 createrepo_c gnupg2 python3 rpm-sign
+          fi
+      - name: Publish ordered repository tree
+        env:
+          REPOSITORY_GPG_PRIVATE_KEY_B64: ${{ secrets.REPOSITORY_GPG_PRIVATE_KEY_B64 }}
+          REPOSITORY_GPG_FINGERPRINT: ${{ secrets.REPOSITORY_GPG_FINGERPRINT }}
+          REPOSITORY_PUBLIC_URL: ${{ secrets.REPOSITORY_PUBLIC_URL }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          scripts/publish-${{ needs.fetch.outputs.publisher }}.sh work/release
+
+  smoke:
+    needs: [fetch, publish]
+    runs-on: ${{ needs.fetch.outputs.runner }}
+    env:
+      REPOSITORY_PUBLIC_URL: ${{ vars.REPOSITORY_PUBLIC_URL }}
+      REPOSITORY_GPG_FINGERPRINT: ${{ vars.REPOSITORY_GPG_FINGERPRINT }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Download validated release
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: validated-release
+          path: work/release
+      - name: Smoke the native public repository
+        run: |
+          scripts/smoke-${{ needs.fetch.outputs.publisher }}.sh work/release "$REPOSITORY_PUBLIC_URL"

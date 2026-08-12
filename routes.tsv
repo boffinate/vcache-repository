@@ -1,0 +1,7 @@
+# target_id	format	package_arch	native_image	docker_platform
+debian-13-amd64	deb	amd64	debian:13	linux/amd64
+debian-13-arm64	deb	arm64	debian:13	linux/arm64
+ubuntu-26.04-amd64	deb	amd64	ubuntu:26.04	linux/amd64
+ubuntu-26.04-arm64	deb	arm64	ubuntu:26.04	linux/arm64
+el10-x86_64	rpm	x86_64	almalinux:10	linux/amd64
+el10-aarch64	rpm	aarch64	almalinux:10	linux/arm64
