@@ -3,9 +3,8 @@
 This repository provides signed Debian and RPM packages for Vinyl Cache 9.0.1. Packages are available now for:
 
 - Debian 13 on amd64 and arm64
-- Enterprise Linux 10 on x86_64
-
-Ubuntu 26.04 (amd64 and arm64) and Enterprise Linux 10 aarch64 are planned, but their repositories are not published yet. Do not configure those targets yet.
+- Ubuntu 26.04 on amd64 and arm64
+- Enterprise Linux 10 on x86_64 and aarch64
 
 Packages are served from `https://packages.boffinate.com/vinyl-cache`. The setup steps below install the repository's public signing key, check its fingerprint, and configure your package manager to verify both packages and repository metadata.
 
@@ -15,9 +14,9 @@ The archive-key fingerprint is:
 AED8146A22F2973E48AE6A1118361320BD4BACCD
 ~~~
 
-## Debian 13
+## Debian 13 and Ubuntu 26.04
 
-Choose the target that matches your architecture: `debian-13-amd64` or `debian-13-arm64`. Set `target` to that value, then run:
+Choose the target that matches your distribution and architecture: `debian-13-amd64`, `debian-13-arm64`, `ubuntu-26.04-amd64`, or `ubuntu-26.04-arm64`. Set `target` to that value, then run:
 
 ~~~sh
 url=https://packages.boffinate.com/vinyl-cache
@@ -49,9 +48,9 @@ apt-cache search '^vinyl-vmod-'
 
 Install any VMOD you need by name. VMOD packages depend on the matching Vinyl Cache package version, so let APT upgrade them together.
 
-## Enterprise Linux 10 x86_64
+## Enterprise Linux 10
 
-The current RPM repository is available for x86_64 only.
+The RPM repository is available for x86_64 and aarch64. Its configuration uses your system's architecture automatically.
 
 ~~~sh
 url=https://packages.boffinate.com/vinyl-cache
