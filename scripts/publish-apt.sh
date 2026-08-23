@@ -8,7 +8,7 @@ source "$SCRIPT_DIR/lib.sh"
 STAGE=$(CDPATH= cd -- "$1" && pwd)
 stage_route "$STAGE"
 [[ $FORMAT == deb ]] || die "source tag is not a Debian target"
-need reprepro; need dpkg-deb; need sha256sum
+need reprepro; need dpkg-deb; need sha256sum; need cmp
 check_public_url
 "$SCRIPT_DIR/fetch-release.sh" --verify "$STAGE" >/dev/null
 
@@ -24,7 +24,15 @@ verify_public_key "$ROOT/keys/vcache-archive-keyring.asc"
 shopt -s nullglob
 packages=("$STAGE"/*.deb)
 (( ${#packages[@]} > 0 )) || die "no Debian packages in stage"
+declare -A stage_package_by_digest
 for package in "${packages[@]}"; do
+  digest=$(sha256_file "$package")
+  existing=${stage_package_by_digest[$digest]:-}
+  if [[ -n $existing ]]; then
+    cmp --silent "$existing" "$package" || die "validated stage has colliding package digests"
+  else
+    stage_package_by_digest[$digest]=$package
+  fi
   reprepro -b "$TREE" includedeb stable "$package" >/dev/null
 done
 
@@ -49,10 +57,10 @@ PREFIX="vinyl-cache/apt/$FAMILY/$TARGET"
 r2_setup
 r2_public_key_once "$ROOT/keys/vcache-archive-keyring.asc" "vinyl-cache/vcache-archive-keyring.asc"
 while IFS= read -r -d '' pool_file; do
-  base=${pool_file##*/}
-  source_file="$STAGE/$base"
-  [[ -f "$source_file" ]] || die "generated pool file has no source asset: $base"
-  expected=$(sha256_file "$source_file")
+  expected=$(sha256_file "$pool_file")
+  source_file=${stage_package_by_digest[$expected]:-}
+  [[ -n $source_file ]] || die "generated pool file does not match a validated stage package"
+  cmp --silent "$source_file" "$pool_file" || die "generated pool file differs from its validated stage package"
   r2_package_once "$pool_file" "$PREFIX/${pool_file#"$TREE"/}" "$expected"
 done < <(find "$TREE/pool" -type f -print0 | sort -z)
 

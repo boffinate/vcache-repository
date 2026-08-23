@@ -96,7 +96,7 @@ jobs:
         run: |
           if [ "$PACKAGE_FORMAT" = deb ]; then
             apt-get update
-            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends curl gnupg python3 reprepro unzip
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends curl diffutils gnupg python3 reprepro unzip
             awscli_version=2.33.0
             case "$(dpkg --print-architecture)" in
               amd64)

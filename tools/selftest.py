@@ -113,6 +113,8 @@ def test_workflow_bootstraps_native_validation_and_container_actions() -> None:
            "EL container bootstrap installs Git and CA certificates")
     expect("awscli_version=2.33.0" in publish,
            "Debian-family publisher pins an AWS CLI version compatible with R2 conditional writes")
+    expect("curl diffutils gnupg python3 reprepro unzip" in publish,
+           "Debian-family publisher installs the byte-identity comparison tool")
     expect("awscli-exe-linux-${awscli_arch}-${awscli_version}.zip" in publish,
            "Debian-family publisher selects the official AWS CLI bundle by architecture")
     for digest in ("db9001fd76d322a2ce9c88b5e1f306c449137541c28d04ca076f3afce366d35d",
@@ -160,6 +162,14 @@ def test_verify_workflow_lints_and_exercises_publishers() -> None:
            "round trip must exercise immutable publication retries")
     expect("--if-none-match '*'" not in harness,
            "the mock object store must not replace the publisher's immutable-write assertion")
+    apt_publisher = (root / "scripts/publish-apt.sh").read_text()
+    expect("stage_package_by_digest" in apt_publisher and "cmp --silent" in apt_publisher,
+           "APT publisher must prove generated pool packages are byte-identical to validated stage packages")
+    expect('source_file="$STAGE/$base"' not in apt_publisher,
+           "APT publisher must not rely on pool and release asset filenames matching")
+    expect("vinyl-vmod-example_1.7-1.vinyl42.3.7.1_" in harness and
+           "1.7-1~vinyl42.3.7.1" in harness,
+           "APT round trip must cover GitHub-normalized VMOD filenames with Debian tilde versions")
 
 
 def main() -> int:

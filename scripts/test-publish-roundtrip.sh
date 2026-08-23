@@ -100,6 +100,18 @@ Priority: optional
 Description: Repository publisher test package
 EOF
   dpkg-deb --build "$PACKAGE_ROOT" "$STAGE/vinyl-cache_42.3.7-1_$DEB_ARCH.deb" >/dev/null
+  VMOD_ROOT="$TMP/vmod-package"
+  mkdir -p "$VMOD_ROOT/DEBIAN"
+  cat >"$VMOD_ROOT/DEBIAN/control" <<EOF
+Package: vinyl-vmod-example
+Version: 1.7-1~vinyl42.3.7.1
+Architecture: $DEB_ARCH
+Maintainer: Repository test <test@example.invalid>
+Section: admin
+Priority: optional
+Description: Repository publisher test VMOD
+EOF
+  dpkg-deb --build "$VMOD_ROOT" "$STAGE/vinyl-vmod-example_1.7-1.vinyl42.3.7.1_$DEB_ARCH.deb" >/dev/null
   TAG=vinyl-42.3.7-$DEB_TARGET
 else
   RPM_ARCH=$(rpm --eval '%{_arch}')
@@ -133,8 +145,11 @@ EOF
   TAG=vinyl-42.3.7-$RPM_TARGET
 fi
 
-PACKAGE=$(find "$STAGE" -maxdepth 1 -type f -name "*.$FORMAT" -printf '%f\n')
-printf '%s  %s\n' "$(sha256sum "$STAGE/$PACKAGE" | awk '{print $1}')" "$PACKAGE" >"$STAGE/SHA256SUMS"
+mapfile -t packages < <(find "$STAGE" -maxdepth 1 -type f -name "*.$FORMAT" -printf '%f\n' | sort)
+(( ${#packages[@]} > 0 ))
+for package in "${packages[@]}"; do
+  printf '%s  %s\n' "$(sha256sum "$STAGE/$package" | awk '{print $1}')" "$package"
+done >"$STAGE/SHA256SUMS"
 printf '%s\n' "$TAG" >"$STAGE/.source-tag"
 printf 'ok\n' >"$STAGE/.validated"
 python3 "$REPO/tools/release.py" verify --stage "$STAGE" --routes "$REPO/routes.tsv"
@@ -176,18 +191,21 @@ EOF
   apt-get -o Dir::Etc::sourcelist="$SOURCE_FILE" -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0 update >/dev/null
   (
     cd "$TMP"
-    apt-get -o Dir::Etc::sourcelist="$SOURCE_FILE" -o Dir::Etc::sourceparts=- download vinyl-cache >/dev/null
+    apt-get -o Dir::Etc::sourcelist="$SOURCE_FILE" -o Dir::Etc::sourceparts=- download vinyl-cache vinyl-vmod-example >/dev/null
   )
-  actual=$(for field in Package Version Architecture; do dpkg-deb -f "$TMP/$PACKAGE" "$field"; done)
+  actual=$(for field in Package Version Architecture; do dpkg-deb -f "$TMP/vinyl-cache_42.3.7-1_$DEB_ARCH.deb" "$field"; done)
   [[ $actual == $'vinyl-cache\n42.3.7-1\n'"$DEB_ARCH" ]]
-  apt-get -o Dir::Etc::sourcelist="$SOURCE_FILE" -o Dir::Etc::sourceparts=- -y install vinyl-cache >/dev/null
+  actual=$(for field in Package Version Architecture; do dpkg-deb -f "$TMP/vinyl-vmod-example_1.7-1~vinyl42.3.7.1_$DEB_ARCH.deb" "$field"; done)
+  [[ $actual == $'vinyl-vmod-example\n1.7-1~vinyl42.3.7.1\n'"$DEB_ARCH" ]]
+  apt-get -o Dir::Etc::sourcelist="$SOURCE_FILE" -o Dir::Etc::sourceparts=- -y install vinyl-cache vinyl-vmod-example >/dev/null
   [[ $(dpkg-query -W -f='${Version}\t${Architecture}' vinyl-cache) == $'42.3.7-1\t'"$DEB_ARCH" ]]
+  [[ $(dpkg-query -W -f='${Version}\t${Architecture}' vinyl-vmod-example) == $'1.7-1~vinyl42.3.7.1\t'"$DEB_ARCH" ]]
 else
   PREFIX="$STORE/vinyl-cache/rpm/vinyl/$RPM_TARGET"
   rpmdb="$TMP/rpmdb"
   mkdir "$rpmdb"
   rpm --dbpath "$rpmdb" --import "$REPO/keys/vcache-archive-keyring.asc"
-  rpmkeys --dbpath "$rpmdb" --checksig --verbose "$PREFIX/Packages/$PACKAGE" | grep -Eq 'Signature.*: OK$'
+  rpmkeys --dbpath "$rpmdb" --checksig --verbose "$PREFIX/Packages/vinyl-cache-42.3.7-1.$RPM_ARCH.rpm" | grep -Eq 'Signature.*: OK$'
   gpg --homedir "$VERIFY_HOME" --batch --verify "$PREFIX/repodata/repomd.xml.asc" "$PREFIX/repodata/repomd.xml"
   rpm --import "$REPO/keys/vcache-archive-keyring.asc"
   python3 -m http.server 18080 --bind 127.0.0.1 --directory "$STORE/vinyl-cache" >/dev/null 2>&1 &
