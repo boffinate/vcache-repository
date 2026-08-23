@@ -91,10 +91,71 @@ def test_workflow_keeps_secrets_after_validation() -> None:
            "the public URL must name the fixed R2 object prefix")
 
 
+def test_workflow_bootstraps_native_validation_and_container_actions() -> None:
+    root = Path(__file__).parents[1]
+    workflow = (root / ".github/workflows/publish.yml").read_text()
+    fetch_checkout = workflow.index("- uses: actions/checkout")
+    fetch_rpm = workflow.index("Install RPM metadata validator")
+    fetch_release = workflow.index("Fetch and validate release")
+    expect(fetch_rpm < fetch_release, "RPM metadata validator precedes release validation")
+    expect(fetch_checkout < fetch_rpm, "fetch runner checks out before installing its RPM validator")
+
+    publish = workflow[workflow.index("  publish:"):workflow.index("  smoke:")]
+    bootstrap = publish.index("Bootstrap container action prerequisites")
+    checkout = publish.index("- uses: actions/checkout")
+    artifact = publish.index("actions/download-artifact")
+    native_tools = publish.index("Install container publication tools")
+    expect(bootstrap < checkout < artifact < native_tools,
+           "target container bootstraps action prerequisites before checkout and artifact download")
+    expect("apt-get install -y --no-install-recommends ca-certificates git" in publish,
+           "Debian-family container bootstrap installs Git and CA certificates")
+    expect("dnf -y install ca-certificates git-core" in publish,
+           "EL container bootstrap installs Git and CA certificates")
+
+
+def test_smokes_retry_with_exact_installed_metadata() -> None:
+    root = Path(__file__).parents[1]
+    lib = (root / "scripts/lib.sh").read_text()
+    apt = (root / "scripts/smoke-apt.sh").read_text()
+    rpm = (root / "scripts/smoke-rpm.sh").read_text()
+    expect("smoke_with_retries()" in lib, "smoke retry helper is missing")
+    expect("SMOKE_ATTEMPTS:-6" in lib and "attempts -le 10" in lib,
+           "smoke retries must have a bounded default")
+    expect("SMOKE_RETRY_DELAY_SECONDS:-10" in lib and "delay -le 60" in lib,
+           "smoke retry delay must be bounded")
+    expect("smoke_with_retries docker run" in apt and "smoke_with_retries docker run" in rpm,
+           "both public client smokes must retry in fresh containers")
+    expect('expected=$(printf "%s\\t%s" "$expected_version" "$expected_architecture")' in apt and
+           'dpkg-query -W -f="\\${Version}\\t\\${Architecture}"' in apt,
+           "APT smoke must compare literal dpkg fields with an exact version and architecture")
+    expect('expected_nevra=$(rpm -qp --qf "%{NEVRA}"' in rpm and
+           'actual_nevra=$(rpm -q --qf "%{NEVRA}"' in rpm,
+           "RPM smoke must compare the installed NEVRA")
+
+
+def test_verify_workflow_lints_and_exercises_publishers() -> None:
+    root = Path(__file__).parents[1]
+    workflow = (root / ".github/workflows/verify.yml").read_text()
+    expect("rhysd/actionlint@sha256:" in workflow, "workflow lint must use a pinned actionlint image")
+    expect("koalaman/shellcheck@sha256:" in workflow, "shell lint must use a pinned ShellCheck image")
+    expect("container: debian:13" in workflow and "test-publish-roundtrip.sh deb" in workflow,
+           "verification must run the Debian publisher round trip in its native container")
+    expect("container: almalinux:10" in workflow and "test-publish-roundtrip.sh rpm" in workflow,
+           "verification must run the RPM publisher round trip in its native container")
+    harness = (root / "scripts/test-publish-roundtrip.sh").read_text()
+    expect(harness.count('"$REPO/scripts/publish-$PUBLISHER.sh" "$STAGE"') == 2,
+           "round trip must exercise immutable publication retries")
+    expect("--if-none-match '*'" not in harness,
+           "the mock object store must not replace the publisher's immutable-write assertion")
+
+
 def main() -> int:
     for test in (test_routes_and_tag, test_strict_checksums,
                  test_release_asset_names_reserve_handoff_markers, test_revision_order_inputs,
-                 test_workflow_keeps_secrets_after_validation):
+                 test_workflow_keeps_secrets_after_validation,
+                 test_workflow_bootstraps_native_validation_and_container_actions,
+                 test_smokes_retry_with_exact_installed_metadata,
+                 test_verify_workflow_lints_and_exercises_publishers):
         test()
         print(f"ok - {test.__name__}")
     return 0

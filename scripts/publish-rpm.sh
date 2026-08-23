@@ -58,7 +58,7 @@ gpg --batch --armor --detach-sign --local-user "$REPOSITORY_GPG_FINGERPRINT" --o
 gpg --batch --verify "$TREE/repodata/repomd.xml.asc" "$TREE/repodata/repomd.xml" >/dev/null
 
 CLIENT="$TMP/vcache-$FAMILY.repo"
-target_pattern=${TARGET%-$ARCH}'-$basearch'
+target_pattern=${TARGET%-"$ARCH"}'-$basearch'
 cat >"$CLIENT" <<EOF
 [vcache-$FAMILY]
 name=Current $FAMILY packages from vcache-packaging

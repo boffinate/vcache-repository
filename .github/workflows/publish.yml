@@ -32,6 +32,10 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - run: python3 tools/selftest.py
+      - name: Install RPM metadata validator
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends rpm
       - name: Fetch and validate release
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -41,17 +45,19 @@ jobs:
       - name: Select native route
         id: route
         run: |
-          IFS=$'\t' read -r family target format arch image platform < <(scripts/fetch-release.sh --describe work/release)
+          IFS=$'\t' read -r _ _ format _ image platform < <(scripts/fetch-release.sh --describe work/release)
           case "$platform" in
             linux/amd64) runner=ubuntu-24.04 ;;
             linux/arm64) runner=ubuntu-24.04-arm ;;
             *) exit 2 ;;
           esac
           if [ "$format" = deb ]; then publisher=apt; else publisher=rpm; fi
-          echo "format=$format" >> "$GITHUB_OUTPUT"
-          echo "publisher=$publisher" >> "$GITHUB_OUTPUT"
-          echo "image=$image" >> "$GITHUB_OUTPUT"
-          echo "runner=$runner" >> "$GITHUB_OUTPUT"
+          {
+            echo "format=$format"
+            echo "publisher=$publisher"
+            echo "image=$image"
+            echo "runner=$runner"
+          } >> "$GITHUB_OUTPUT"
       - name: Transfer validated release
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -68,6 +74,16 @@ jobs:
     environment:
       name: production
     steps:
+      - name: Bootstrap container action prerequisites
+        env:
+          PACKAGE_FORMAT: ${{ needs.fetch.outputs.format }}
+        run: |
+          if [ "$PACKAGE_FORMAT" = deb ]; then
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates git
+          else
+            dnf -y install ca-certificates git-core
+          fi
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Download validated release
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0

@@ -112,6 +112,25 @@ smoke_setup() {
   need docker; need_env REPOSITORY_GPG_FINGERPRINT
 }
 
+smoke_with_retries() {
+  local attempts=${SMOKE_ATTEMPTS:-6} delay=${SMOKE_RETRY_DELAY_SECONDS:-10} attempt rc
+  [[ $attempts =~ ^[1-9][0-9]*$ && $attempts -le 10 ]] || die "SMOKE_ATTEMPTS must be an integer from 1 to 10"
+  [[ $delay =~ ^[0-9]+$ && $delay -le 60 ]] || die "SMOKE_RETRY_DELAY_SECONDS must be an integer from 0 to 60"
+  for ((attempt = 1; attempt <= attempts; attempt++)); do
+    if "$@"; then
+      return 0
+    else
+      rc=$?
+    fi
+    if (( attempt < attempts )); then
+      printf 'public repository smoke attempt %d/%d failed; retrying in %ss\n' "$attempt" "$attempts" "$delay" >&2
+      sleep "$delay"
+    fi
+  done
+  printf 'public repository smoke failed after %d attempts\n' "$attempts" >&2
+  return "$rc"
+}
+
 upload_tree() {
   local tree=$1 prefix=$2 file rel skip
   shift 2

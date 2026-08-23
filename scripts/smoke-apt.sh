@@ -4,7 +4,7 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 source "$SCRIPT_DIR/lib.sh"
 smoke_setup deb "$@"
 URL=$REPOSITORY_PUBLIC_URL
-docker run --rm --platform "$PLATFORM" -v "$STAGE:/stage:ro" "$IMAGE" bash -euxo pipefail -c '
+smoke_with_retries docker run --rm --platform "$PLATFORM" -v "$STAGE:/stage:ro" "$IMAGE" bash -euxo pipefail -c '
   apt-get update
   apt-get install -y --no-install-recommends ca-certificates curl gnupg
   install -d -m 0755 /etc/apt/keyrings
@@ -14,4 +14,12 @@ docker run --rm --platform "$PLATFORM" -v "$STAGE:/stage:ro" "$IMAGE" bash -euxo
   apt-get update
   packages=$(for file in /stage/*.deb; do dpkg-deb -f "$file" Package; done)
   apt-get install -y $packages
+  for file in /stage/*.deb; do
+    package=$(dpkg-deb -f "$file" Package)
+    expected_version=$(dpkg-deb -f "$file" Version)
+    expected_architecture=$(dpkg-deb -f "$file" Architecture)
+    expected=$(printf "%s\t%s" "$expected_version" "$expected_architecture")
+    actual=$(dpkg-query -W -f="\${Version}\t\${Architecture}" "$package")
+    test "$actual" = "$expected"
+  done
 ' "$URL" "$REPOSITORY_GPG_FINGERPRINT" "$FAMILY" "$TARGET"
