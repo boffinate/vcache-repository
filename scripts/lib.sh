@@ -3,6 +3,14 @@ set -euo pipefail
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 
+# Payloads are immutable, so they may be cached forever. Everything a client
+# re-reads to discover new packages is capped short enough that a failed purge
+# is bounded staleness rather than a stuck repository.
+CACHE_IMMUTABLE='public, max-age=31536000, immutable'
+CACHE_METADATA='public, max-age=600'
+CACHE_KEYRING='public, max-age=3600'
+CACHE_HTML='public, max-age=600'
+
 die() { echo "error: $*" >&2; exit 2; }
 need() { command -v "$1" >/dev/null 2>&1 || die "missing command: $1"; }
 need_env() { [[ -n ${!1:-} ]] || die "missing environment variable: $1"; }
@@ -32,6 +40,22 @@ r2_setup() {
 }
 
 r2_uri() { printf 's3://%s/%s' "$R2_BUCKET" "$1"; }
+
+purge_record() {
+  local path=${1#vinyl-cache/} base=${REPOSITORY_PUBLIC_URL%/}
+  printf '%s\n' "$base/$path" >>"${PURGE_LIST:?}"
+  # A Transform Rule rewrites the directory URL a browser asks for onto the
+  # index.html object, and Cloudflare caches under the requested URL.
+  if [[ $path == index.html || $path == */index.html ]]; then
+    printf '%s\n' "$base/${path%index.html}" >>"$PURGE_LIST"
+  fi
+}
+
+purge_flush() {
+  [[ -s ${PURGE_LIST:?} ]] || return 0
+  need python3
+  python3 "$ROOT/tools/purge.py" --urls-file "$PURGE_LIST"
+}
 r2_exists() {
   local output rc
   if output=$(aws "${AWS_ARGS[@]}" s3api head-object --bucket "$R2_BUCKET" --key "$1" 2>&1); then
@@ -46,25 +70,44 @@ r2_exists() {
   return "$rc"
 }
 r2_get() { aws "${AWS_ARGS[@]}" s3 cp "$(r2_uri "$2")" "$1" --only-show-errors; }
-r2_put() { aws "${AWS_ARGS[@]}" s3 cp "$1" "$(r2_uri "$2")" --only-show-errors --content-type "$3"; }
+r2_put() { aws "${AWS_ARGS[@]}" s3 cp "$1" "$(r2_uri "$2")" --only-show-errors --content-type "$3" --cache-control "${4:?}"; purge_record "$2"; }
+
+# Single-part put keeps the stored ETag a plain MD5, which is what site.py
+# compares against to skip pages whose bytes have not changed.
+r2_put_html() {
+  local file=$1 key=$2 size
+  size=$(wc -c <"$file")
+  (( size <= 5242880 )) || die "generated page is too large for a single-part upload: $key"
+  aws "${AWS_ARGS[@]}" s3api put-object --bucket "$R2_BUCKET" --key "$key" --body "$file" --content-type 'text/html; charset=utf-8' --cache-control "$CACHE_HTML" >/dev/null
+  purge_record "$key"
+}
 
 r2_immutable_once() {
-  local source=$1 key=$2 expected=$3 content_type=$4 collision=$5 existing output actual
-  if output=$(aws "${AWS_ARGS[@]}" s3api put-object --bucket "$R2_BUCKET" --key "$key" --body "$source" --content-type "$content_type" --if-none-match '*' 2>&1); then return; fi
+  local source=$1 key=$2 expected=$3 content_type=$4 cache_control=$5 collision=$6 existing output actual
+  if output=$(aws "${AWS_ARGS[@]}" s3api put-object --bucket "$R2_BUCKET" --key "$key" --body "$source" --content-type "$content_type" --cache-control "$cache_control" --if-none-match '*' 2>&1); then
+    purge_record "$key"
+    return
+  fi
   grep -Eqi '(^|[^0-9])412([^0-9]|$)|preconditionfailed' <<<"$output" || { printf '%s\n' "$output" >&2; die "could not create immutable object: $key"; }
   existing=$(mktemp)
   r2_get "$existing" "$key"
   actual=$(sha256_file "$existing")
   [[ $actual == "$expected" ]] || { rm -f "$existing"; die "$collision"; }
   rm -f "$existing"
+  # The object is already correct, but the URL may be cached as a 404 from a
+  # probe taken before it existed, and a rerun after a failed purge must
+  # re-record everything the previous run touched. The existing object's
+  # metadata is deliberately left alone: payloads are never overwritten, so a
+  # legacy object simply keeps whatever headers it was created with.
+  purge_record "$key"
 }
 
 r2_public_key_once() {
-  r2_immutable_once "$1" "$2" "$(sha256_file "$1")" "application/pgp-keys" "public key object differs from checked-in certificate"
+  r2_immutable_once "$1" "$2" "$(sha256_file "$1")" "application/pgp-keys" "$CACHE_KEYRING" "public key object differs from checked-in certificate"
 }
 
 r2_package_once() {
-  r2_immutable_once "$1" "$2" "$3" "application/octet-stream" "immutable package collision at $2; bump package_revision"
+  r2_immutable_once "$1" "$2" "$3" "application/octet-stream" "$CACHE_IMMUTABLE" "immutable package collision at $2; bump package_revision"
 }
 
 decode_private_key() {
@@ -137,6 +180,6 @@ upload_tree() {
   while IFS= read -r -d '' file; do
     rel=${file#"$tree"/}
     for skip; do [[ $rel == "$skip" ]] && continue 2; done
-    r2_put "$file" "$prefix/$rel" "application/octet-stream"
+    r2_put "$file" "$prefix/$rel" "application/octet-stream" "$CACHE_METADATA"
   done < <(find "$tree" -type f -print0 | sort -z)
 }

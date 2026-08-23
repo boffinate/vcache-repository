@@ -140,8 +140,25 @@ jobs:
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
           scripts/publish-${{ needs.fetch.outputs.publisher }}.sh work/release
+      # Runs in the publish job so it reuses the container's python3 and AWS CLI
+      # and needs no second environment approval. A failure here fails the job
+      # and skips smoke even though the repository publish succeeded; rerunning
+      # the same source tag is idempotent and is the documented recovery.
+      - name: Publish the browsable site
+        env:
+          REPOSITORY_PUBLIC_URL: ${{ secrets.REPOSITORY_PUBLIC_URL }}
+          REPOSITORY_GPG_FINGERPRINT: ${{ secrets.REPOSITORY_GPG_FINGERPRINT }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: scripts/publish-site.sh
 
   smoke:
     needs: [fetch, publish]

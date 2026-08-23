@@ -14,6 +14,8 @@ check_public_url
 
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
+PURGE_LIST="$TMP/purge-urls"
+: >"$PURGE_LIST"
 TREE="$TMP/tree"
 mkdir -p "$TREE/conf" "$TREE/dists" "$TREE/pool"
 printf '%s\n' "Origin: vcache-packaging" "Label: vcache-$FAMILY" "Codename: stable" "Suite: stable" "Components: main" "Architectures: $ARCH" "SignWith: $REPOSITORY_GPG_FINGERPRINT" >"$TREE/conf/distributions"
@@ -35,6 +37,10 @@ for package in "${packages[@]}"; do
   fi
   reprepro -b "$TREE" includedeb stable "$package" >/dev/null
 done
+
+# index.html is reserved for the generated site, so a repository tree that
+# contained one would have its listing page silently replaced by package data.
+[[ -z $(find "$TREE" -name index.html -print -quit) ]] || die "generated tree contains a reserved index.html"
 
 release="$TREE/dists/stable/Release"
 inrelease="$TREE/dists/stable/InRelease"
@@ -65,7 +71,8 @@ while IFS= read -r -d '' pool_file; do
 done < <(find "$TREE/pool" -type f -print0 | sort -z)
 
 upload_tree "$TREE/dists" "$PREFIX/dists" "stable/Release" "stable/Release.gpg" "stable/InRelease"
-r2_put "$CLIENT" "$PREFIX/vcache-$FAMILY.sources" "text/plain"
-r2_put "$release" "$PREFIX/dists/stable/Release" "application/octet-stream"
-r2_put "$release_sig" "$PREFIX/dists/stable/Release.gpg" "application/pgp-signature"
-r2_put "$inrelease" "$PREFIX/dists/stable/InRelease" "application/octet-stream"
+r2_put "$CLIENT" "$PREFIX/vcache-$FAMILY.sources" "text/plain" "$CACHE_METADATA"
+r2_put "$release" "$PREFIX/dists/stable/Release" "application/octet-stream" "$CACHE_METADATA"
+r2_put "$release_sig" "$PREFIX/dists/stable/Release.gpg" "application/pgp-signature" "$CACHE_METADATA"
+r2_put "$inrelease" "$PREFIX/dists/stable/InRelease" "application/octet-stream" "$CACHE_METADATA"
+purge_flush

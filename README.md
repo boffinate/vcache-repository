@@ -6,6 +6,8 @@ This repository provides signed Debian and RPM packages for Vinyl Cache 9.0.1. P
 - Ubuntu 26.04 on amd64 and arm64
 - Enterprise Linux 10 on x86_64 and aarch64
 
+Browse the published repositories, including the current package list for each target, at `https://packages.boffinate.com/vinyl-cache/`.
+
 Packages are served from `https://packages.boffinate.com/vinyl-cache`. The setup steps below install the repository's public signing key, check its fingerprint, and configure your package manager to verify both packages and repository metadata.
 
 The archive-key fingerprint is:

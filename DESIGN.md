@@ -18,7 +18,11 @@ The checked-in key is public. Commissioning supplies one dedicated archive priva
 
 ## Publication
 
-Build a fresh family/target tree. Upload the public key if absent, then package payloads, ordinary metadata, and signed top-level metadata last. Never overwrite or delete payload objects and never use `sync --delete`. The serialized workflow is the only writer using its dedicated R2 credential. R2 production uses a custom domain with one cache-bypass rule for the `vinyl-cache/` prefix.
+Build a fresh family/target tree. Upload the public key if absent, then package payloads, ordinary metadata, and signed top-level metadata last. Never overwrite or delete payload objects and never use `sync --delete`. The serialized workflow is the only writer using its dedicated R2 credential. R2 production uses a custom domain with one cache rule that makes the `vinyl-cache/` prefix eligible for caching. Every object is uploaded with `Cache-Control`: payloads immutable for a year, the public key for an hour, and replaceable indexes and client configuration for ten minutes. Each publisher records the public URL of every object it writes and purges exactly those URLs at the end of the run. A purge is never zone-wide, a failed purge fails the publication, and rerunning the same source tag re-records and repurges everything the run touched.
+
+## Site
+
+A generated static site makes the published roots browsable. `scripts/publish-site.sh` lists the bucket and writes one page per directory plus a root page built from `README.md` and `routes.tsv`; the bucket and those two files are the only sources of truth. `index.html` is reserved: publishers refuse a generated tree that contains one, and listings never show it as an entry. Pages are uploaded single-part so their stored ETag remains an MD5 the next run can compare, which makes an unchanged site a zero-upload, zero-purge run. Directory URLs are served through a Cloudflare URL-rewrite rule that appends `index.html`. There are no workers and no server-side code.
 
 The manual publisher runs in the route's native Debian, Ubuntu or AlmaLinux utility container and installs only the required format tools before invoking the scripts. Native client smoke runs in a fresh container on the same native runner; v1 does not add a long-lived build image.
 

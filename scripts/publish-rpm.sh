@@ -14,6 +14,8 @@ check_public_url
 
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
+PURGE_LIST="$TMP/purge-urls"
+: >"$PURGE_LIST"
 TREE="$TMP/tree"
 RPMDB="$TMP/rpmdb"
 mkdir -p "$TREE/Packages" "$RPMDB"
@@ -57,6 +59,10 @@ createrepo_c "$TREE" >/dev/null
 gpg --batch --armor --detach-sign --local-user "$REPOSITORY_GPG_FINGERPRINT" --output "$TREE/repodata/repomd.xml.asc" "$TREE/repodata/repomd.xml"
 gpg --batch --verify "$TREE/repodata/repomd.xml.asc" "$TREE/repodata/repomd.xml" >/dev/null
 
+# index.html is reserved for the generated site, so a repository tree that
+# contained one would have its listing page silently replaced by package data.
+[[ -z $(find "$TREE" -name index.html -print -quit) ]] || die "generated tree contains a reserved index.html"
+
 CLIENT="$TMP/vcache-$FAMILY.repo"
 target_pattern=${TARGET%-"$ARCH"}'-$basearch'
 cat >"$CLIENT" <<EOF
@@ -79,8 +85,9 @@ done < <(find "$TREE/Packages" -type f -print0 | sort -z)
 while IFS= read -r -d '' file; do
   rel=${file#"$TREE"/}
   [[ $rel == repodata/repomd.xml || $rel == repodata/repomd.xml.asc ]] && continue
-  r2_put "$file" "$PREFIX/$rel" "application/octet-stream"
+  r2_put "$file" "$PREFIX/$rel" "application/octet-stream" "$CACHE_METADATA"
 done < <(find "$TREE/repodata" -type f -print0 | sort -z)
-r2_put "$CLIENT" "vinyl-cache/rpm/$FAMILY/vcache-$FAMILY.repo" "text/plain"
-r2_put "$TREE/repodata/repomd.xml" "$PREFIX/repodata/repomd.xml" "application/xml"
-r2_put "$TREE/repodata/repomd.xml.asc" "$PREFIX/repodata/repomd.xml.asc" "application/pgp-signature"
+r2_put "$CLIENT" "vinyl-cache/rpm/$FAMILY/vcache-$FAMILY.repo" "text/plain" "$CACHE_METADATA"
+r2_put "$TREE/repodata/repomd.xml" "$PREFIX/repodata/repomd.xml" "application/xml" "$CACHE_METADATA"
+r2_put "$TREE/repodata/repomd.xml.asc" "$PREFIX/repodata/repomd.xml.asc" "application/pgp-signature" "$CACHE_METADATA"
+purge_flush
