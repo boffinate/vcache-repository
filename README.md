@@ -61,10 +61,11 @@ curl -fsS "$url/vcache-archive-keyring.asc" -o /tmp/vcache-key.asc
 test "$(gpg --show-keys --with-colons /tmp/vcache-key.asc | awk -F: '$1 == "fpr" {print $10; exit}')" = "$fingerprint"
 sudo install -m 0644 /tmp/vcache-key.asc /etc/pki/rpm-gpg/vcache-archive-keyring.asc
 sudo curl -fsS "$url/rpm/$family/vcache-$family.repo" -o /etc/yum.repos.d/vcache.repo
+sudo dnf install -y epel-release
 sudo dnf makecache
 ```
 
-The published RPM file enables both `gpgcheck` and `repo_gpgcheck`.
+The Vinyl Cache RPMs require `jemalloc` and `libunwind`, which AlmaLinux 10 supplies from EPEL. Install `epel-release` in its own transaction before refreshing DNF metadata so that dependency resolution can see those packages. The published RPM file enables both `gpgcheck` and `repo_gpgcheck`.
 
 ## Recovery and operations
 

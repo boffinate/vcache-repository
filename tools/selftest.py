@@ -131,6 +131,8 @@ def test_smokes_retry_with_exact_installed_metadata() -> None:
     expect('expected_nevra=$(rpm -qp --qf "%{NEVRA}"' in rpm and
            'actual_nevra=$(rpm -q --qf "%{NEVRA}"' in rpm,
            "RPM smoke must compare the installed NEVRA")
+    expect("dnf -y install epel-release\n  dnf -y makecache\n" in rpm,
+           "RPM smoke must enable EPEL in a separate transaction before refreshing metadata")
 
 
 def test_verify_workflow_lints_and_exercises_publishers() -> None:

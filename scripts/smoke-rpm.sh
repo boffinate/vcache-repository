@@ -12,6 +12,7 @@ smoke_with_retries docker run --rm --platform "$PLATFORM" -v "$STAGE:/stage:ro" 
   /usr/bin/curl --fail --silent --show-error "$0/rpm/$1/vcache-$1.repo" -o /etc/yum.repos.d/vcache.repo
   grep -q "gpgcheck=1" /etc/yum.repos.d/vcache.repo
   grep -q "repo_gpgcheck=1" /etc/yum.repos.d/vcache.repo
+  dnf -y install epel-release
   dnf -y makecache
   packages=$(for file in /stage/*.rpm; do rpm -qp --qf "%{NAME}\n" "$file"; done)
   dnf -y install $packages
