@@ -65,3 +65,13 @@ sudo dnf makecache
 ```
 
 The published RPM file enables both `gpgcheck` and `repo_gpgcheck`.
+
+## Recovery and operations
+
+The publisher is safe to dispatch again with the same `source_tag`. A failed job may have uploaded immutable package payloads, but a retry verifies and reuses only byte-identical Debian payloads or RPMs with the same NEVRA, header digest, payload digest, and archive-key signature. It then rebuilds and republishes the mutable repository metadata. Do not delete or manually replace objects to recover a failed publication.
+
+If a retry reports an immutable package collision, do not alter the repository object. Correct the producer input and publish a new positive package revision; use the new producer release tag for the next dispatch. If the checked-in public key, configured fingerprint, or private signing key disagree, stop publication and investigate the trust-root configuration. Replacing an archive key requires the documented manual trust-root migration, including a client communication plan; it is not a routine retry.
+
+The public-client smoke test starts a new native container for every attempt and retries up to six times with a ten-second delay. This only accommodates bounded custom-domain or cache propagation after ordered metadata publication. Configure `SMOKE_ATTEMPTS` (1–10) and `SMOKE_RETRY_DELAY_SECONDS` (0–60) only when a documented incident needs a different bounded window. A final failure is actionable: retain the workflow logs, confirm the custom-domain mapping and `vinyl-cache/` cache-bypass rule, and rerun the same source tag after the external condition is fixed.
+
+Successful smoke output proves the installed Debian package version and architecture, or installed RPM NEVRA, exactly match the validated producer artifacts. Treat any mismatch as a repository-integrity incident: stop further dispatches, preserve logs and object identifiers, and investigate before retrying.
