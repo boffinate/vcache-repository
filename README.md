@@ -1,78 +1,115 @@
-# vcache-repository
+# Vinyl Cache package repository
 
-This sibling repository publishes the checked, unsigned package assets from the fixed `vcache-packaging` GitHub repository as signed APT and RPM repositories on Cloudflare R2.
+This repository provides signed Debian and RPM packages for Vinyl Cache 9.0.1. It currently supports:
 
-It is intentionally a thin distributor. It contains no source pins, catalog, package recipes or build logic. `fetch-release.sh` accepts only a source tag; the producer repository and route table are checked in.
+- Debian 13 on amd64 and arm64
+- Ubuntu 26.04 on amd64 and arm64
+- Enterprise Linux 10 on x86_64 and aarch64
 
-## Commissioning
+Packages are served from `https://packages.boffinate.com/vinyl-cache`. The setup steps below install the repository's public signing key, check its fingerprint, and configure your package manager to verify both packages and repository metadata.
 
-1. Review `keys/vcache-archive-keyring.asc` against the full primary fingerprint below and record the same value in the protected `production` environment as `REPOSITORY_GPG_FINGERPRINT`.
-2. Store an unencrypted CI export of the matching private archive key, base64 encoded, as `REPOSITORY_GPG_PRIVATE_KEY_B64`. Keep the offline backup encrypted and retain its revocation certificate outside GitHub. Key replacement is a manual trust-root migration.
-3. Configure `R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `REPOSITORY_PUBLIC_URL` in the protected environment. `REPOSITORY_PUBLIC_URL` is the production custom-domain URL mapped to the bucket's `vinyl-cache/` prefix and must end in `/vinyl-cache`, for example `https://packages.example.org/vinyl-cache`. Use a dedicated R2 credential for this workflow; it must not grant delete access.
-4. Configure one cache-bypass rule for the `vinyl-cache/` prefix on the production custom domain. Do not advertise `r2.dev`.
-5. Restrict the `production` environment to `main` and require a reviewer. Add the public URL and fingerprint as repository variables with the same names so the secret-free smoke job can read them.
+The archive-key fingerprint is:
 
-The public key object is written only when absent. Existing bytes must match the checked-in certificate and fingerprint.
+~~~
+AED8146A22F2973E48AE6A1118361320BD4BACCD
+~~~
 
-## Manual publication
+## Debian 13 and Ubuntu 26.04
 
-Dispatch `publish.yml` from `main` with a `source_tag` such as `vinyl-X.Y.Z-debian-13-amd64`. Fetch and validation happen before the protected signing job. APT uses `reprepro` and signs `Release`, `Release.gpg`, and `InRelease`; RPM payloads are signed with `rpmsign`, repository metadata with a detached OpenPGP signature, and clients require both package and repository signatures.
+Choose the target that matches your system:
 
-Expected archive-key fingerprint: `AED8146A22F2973E48AE6A1118361320BD4BACCD`
+| System | amd64 | arm64 |
+| --- | --- | --- |
+| Debian 13 | `debian-13-amd64` | `debian-13-arm64` |
+| Ubuntu 26.04 | `ubuntu-26.04-amd64` | `ubuntu-26.04-arm64` |
 
-Install the generated `.sources` or `.repo` file from the public URL. Never use `apt-key`, `trusted=yes`, `gpgcheck=0`, or `repo_gpgcheck=0`.
+Set `target` to the selected value, then run:
 
-For APT, set `url`, `family`, `target`, and `fingerprint`, then install the key and generated deb822 source:
-
-```sh
-url=https://packages.example.org/vinyl-cache
-family=vinyl
+~~~sh
+url=https://packages.boffinate.com/vinyl-cache
 target=debian-13-amd64
 fingerprint=AED8146A22F2973E48AE6A1118361320BD4BACCD
+
 sudo apt-get update
 sudo apt-get install -y ca-certificates curl gnupg
 sudo install -d -m 0755 /etc/apt/keyrings
-curl -fsS "$url/vcache-archive-keyring.asc" -o /tmp/vcache-key.asc
-test "$(gpg --show-keys --with-colons /tmp/vcache-key.asc | awk -F: '$1 == "fpr" {print $10; exit}')" = "$fingerprint"
-sudo install -m 0644 /tmp/vcache-key.asc /etc/apt/keyrings/vcache-archive-keyring.asc
-sudo curl -fsS "$url/apt/$family/$target/vcache-$family.sources" -o /etc/apt/sources.list.d/vcache.sources
+curl -fsS "$url/vcache-archive-keyring.asc" -o /tmp/vcache-archive-keyring.asc
+test "$(gpg --show-keys --with-colons /tmp/vcache-archive-keyring.asc | awk -F: '$1 == "fpr" {print $10; exit}')" = "$fingerprint"
+sudo install -m 0644 /tmp/vcache-archive-keyring.asc /etc/apt/keyrings/vcache-archive-keyring.asc
+sudo curl -fsS "$url/apt/vinyl/$target/vcache-vinyl.sources" -o /etc/apt/sources.list.d/vcache.sources
 sudo apt-get update
-```
+~~~
 
-The generated source is:
+Install Vinyl Cache:
 
-```text
-Types: deb
-URIs: https://packages.example.org/vinyl-cache/apt/vinyl/debian-13-amd64
-Suites: stable
-Components: main
-Architectures: amd64
-Signed-By: /etc/apt/keyrings/vcache-archive-keyring.asc
-```
+~~~sh
+sudo apt-get install -y vinyl-cache
+~~~
 
-For DNF, use the same `url`, `family`, and `fingerprint`, then install the key and generated repository file:
+The development package is `vinyl-cache-dev`. Current VMOD packages are `vinyl-vmod-cachetag`, `vinyl-vmod-dict`, `vinyl-vmod-pesi`, `vinyl-vmod-remoteip`, and `vinyl-vmod-tbf`:
 
-```sh
-url=https://packages.example.org/vinyl-cache
-family=vinyl
+~~~sh
+sudo apt-get install -y vinyl-cache-dev vinyl-vmod-cachetag
+apt-cache search '^vinyl-vmod-'
+~~~
+
+Install any VMOD you need by name. VMOD packages depend on the matching Vinyl Cache package version, so let APT upgrade them together.
+
+## Enterprise Linux 10
+
+The repository supports x86_64 and aarch64. It selects the right architecture automatically through DNF's `$basearch` setting.
+
+~~~sh
+url=https://packages.boffinate.com/vinyl-cache
 fingerprint=AED8146A22F2973E48AE6A1118361320BD4BACCD
+
 sudo dnf install -y ca-certificates curl-minimal gnupg2
-curl -fsS "$url/vcache-archive-keyring.asc" -o /tmp/vcache-key.asc
-test "$(gpg --show-keys --with-colons /tmp/vcache-key.asc | awk -F: '$1 == "fpr" {print $10; exit}')" = "$fingerprint"
-sudo install -m 0644 /tmp/vcache-key.asc /etc/pki/rpm-gpg/vcache-archive-keyring.asc
-sudo curl -fsS "$url/rpm/$family/vcache-$family.repo" -o /etc/yum.repos.d/vcache.repo
+curl -fsS "$url/vcache-archive-keyring.asc" -o /tmp/vcache-archive-keyring.asc
+test "$(gpg --show-keys --with-colons /tmp/vcache-archive-keyring.asc | awk -F: '$1 == "fpr" {print $10; exit}')" = "$fingerprint"
+sudo install -m 0644 /tmp/vcache-archive-keyring.asc /etc/pki/rpm-gpg/vcache-archive-keyring.asc
+sudo curl -fsS "$url/rpm/vinyl/vcache-vinyl.repo" -o /etc/yum.repos.d/vcache.repo
+grep -qx 'gpgcheck=1' /etc/yum.repos.d/vcache.repo
+grep -qx 'repo_gpgcheck=1' /etc/yum.repos.d/vcache.repo
 sudo dnf install -y epel-release
 sudo dnf makecache
-```
+~~~
 
-The Vinyl Cache RPMs require `jemalloc` and `libunwind`, which AlmaLinux 10 supplies from EPEL. Install `epel-release` in its own transaction before refreshing DNF metadata so that dependency resolution can see those packages. The published RPM file enables both `gpgcheck` and `repo_gpgcheck`.
+EPEL is required because the Vinyl Cache RPMs use `jemalloc` and `libunwind` from EPEL. Install `epel-release` in its own transaction before refreshing metadata, as shown above.
 
-## Recovery and operations
+Install Vinyl Cache:
 
-The publisher is safe to dispatch again with the same `source_tag`. A failed job may have uploaded immutable package payloads, but a retry verifies and reuses only byte-identical Debian payloads or RPMs with the same NEVRA, header digest, payload digest, and archive-key signature. It then rebuilds and republishes the mutable repository metadata. Do not delete or manually replace objects to recover a failed publication.
+~~~sh
+sudo dnf install -y vinyl-cache
+~~~
 
-If a retry reports an immutable package collision, do not alter the repository object. Correct the producer input and publish a new positive package revision; use the new producer release tag for the next dispatch. If the checked-in public key, configured fingerprint, or private signing key disagree, stop publication and investigate the trust-root configuration. Replacing an archive key requires the documented manual trust-root migration, including a client communication plan; it is not a routine retry.
+The development package is `vinyl-cache-devel`. Current VMOD packages are `vinyl-vmod-cachetag`, `vinyl-vmod-dict`, `vinyl-vmod-pesi`, `vinyl-vmod-remoteip`, and `vinyl-vmod-tbf`:
 
-The public-client smoke test starts a new native container for every attempt and retries up to six times with a ten-second delay. This only accommodates bounded custom-domain or cache propagation after ordered metadata publication. Configure `SMOKE_ATTEMPTS` (1–10) and `SMOKE_RETRY_DELAY_SECONDS` (0–60) only when a documented incident needs a different bounded window. A final failure is actionable: retain the workflow logs, confirm the custom-domain mapping and `vinyl-cache/` cache-bypass rule, and rerun the same source tag after the external condition is fixed.
+~~~sh
+sudo dnf install -y vinyl-cache-devel vinyl-vmod-cachetag
+dnf search vinyl-vmod
+~~~
 
-Successful smoke output proves the installed Debian package version and architecture, or installed RPM NEVRA, exactly match the validated producer artifacts. Treat any mismatch as a repository-integrity incident: stop further dispatches, preserve logs and object identifiers, and investigate before retrying.
+## Updates and removal
+
+Use your normal package-manager upgrade command to receive signed updates:
+
+~~~sh
+sudo apt-get update && sudo apt-get upgrade
+sudo dnf upgrade
+~~~
+
+To stop using this repository without removing installed packages, remove its configuration and key, then refresh metadata:
+
+~~~sh
+sudo rm /etc/apt/sources.list.d/vcache.sources /etc/apt/keyrings/vcache-archive-keyring.asc
+sudo apt-get update
+
+sudo rm /etc/yum.repos.d/vcache.repo /etc/pki/rpm-gpg/vcache-archive-keyring.asc
+sudo dnf makecache
+~~~
+
+Remove Vinyl Cache or a VMOD separately with its exact package name if you no longer need it.
+
+## Maintainers
+
+Repository commissioning, publication, and recovery procedures are in [the maintainer guide](docs/20260823_1348_guide_repository-operations.md). Those instructions are for people operating the signing key, GitHub environment, and Cloudflare R2 publication workflow.
