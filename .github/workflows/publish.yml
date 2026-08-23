@@ -96,7 +96,33 @@ jobs:
         run: |
           if [ "$PACKAGE_FORMAT" = deb ]; then
             apt-get update
-            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends awscli gnupg python3 reprepro
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends curl gnupg python3 reprepro unzip
+            awscli_version=2.33.0
+            case "$(dpkg --print-architecture)" in
+              amd64)
+                awscli_arch=x86_64
+                awscli_sha256=72a9e72382bae49c6f0239dbba4affb1d963eb2d22a55b006e69d7b27f6d1a66
+                ;;
+              arm64)
+                awscli_arch=aarch64
+                awscli_sha256=317455780b0b3f88b34fd4112a34f98f02239340e3645437405a03750b132ffd
+                ;;
+              *)
+                echo "unsupported Debian architecture for AWS CLI: $(dpkg --print-architecture)" >&2
+                exit 2
+                ;;
+            esac
+            curl --fail --location --silent --show-error --output /tmp/awscliv2.zip "https://awscli.amazonaws.com/awscli-exe-linux-${awscli_arch}-${awscli_version}.zip"
+            printf '%s  %s\n' "$awscli_sha256" /tmp/awscliv2.zip | sha256sum --check --status
+            unzip -q /tmp/awscliv2.zip -d /tmp
+            /tmp/aws/install --install-dir /usr/local/aws-cli --bin-dir /usr/local/bin
+            case "$(aws --version 2>&1)" in
+              aws-cli/2.33.0*) ;;
+              *)
+                echo "unexpected AWS CLI version" >&2
+                exit 2
+                ;;
+            esac
           else
             dnf -y install awscli2 createrepo_c gnupg2 python3 rpm-sign
           fi

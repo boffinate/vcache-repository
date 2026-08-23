@@ -1,3 +1,4 @@
 work/
+.wrangler/
 __pycache__/
 *.pyc
