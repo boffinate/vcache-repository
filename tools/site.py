@@ -26,6 +26,8 @@ MD5_RE = re.compile(r"^[0-9a-f]{32}$")
 
 HEADING_RE = re.compile(r"^(#{1,2}) (\S.*)$")
 FENCE_RE = re.compile(r"^~~~([A-Za-z0-9]*)$")
+EXCLUDE_BEGIN = "<!-- BEGIN_EXCLUDE -->"
+EXCLUDE_END = "<!-- END_EXCLUDE -->"
 ITEM_RE = re.compile(r"^- (\S.*)$")
 INLINE_RE = re.compile(r"`[^`]+`|\*\*[^*]+\*\*|\[[^\[\]]+\]\([^()\s]+\)")
 # Anything Markdown would have treated as structure but this renderer does not
@@ -92,9 +94,29 @@ def render_inline(text: str) -> str:
     return "".join(out)
 
 
+def strip_excluded(text: str) -> str:
+    """Drop README regions fenced by the exclusion markers, which hold content for GitHub readers only."""
+    kept, excluding = [], False
+    for number, line in enumerate(text.splitlines(), 1):
+        marker = line.strip()
+        if marker == EXCLUDE_BEGIN:
+            if excluding:
+                raise SiteError(f"line {number}: nested {EXCLUDE_BEGIN}")
+            excluding = True
+        elif marker == EXCLUDE_END:
+            if not excluding:
+                raise SiteError(f"line {number}: {EXCLUDE_END} without a matching {EXCLUDE_BEGIN}")
+            excluding = False
+        elif not excluding:
+            kept.append(line)
+    if excluding:
+        raise SiteError(f"unterminated {EXCLUDE_BEGIN}")
+    return "\n".join(kept) + "\n"
+
+
 def render_markdown(text: str) -> str:
     """Render exactly the Markdown subset the README uses, rejecting the rest."""
-    lines = text.splitlines()
+    lines = strip_excluded(text).splitlines()
     out, index = [], 0
     while index < len(lines):
         line = lines[index]

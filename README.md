@@ -105,6 +105,8 @@ sudo dnf makecache
 
 Remove Vinyl Cache or a VMOD separately with its exact package name if you no longer need it.
 
+<!-- BEGIN_EXCLUDE -->
 ## Maintainers
 
 Repository commissioning, publication, and recovery procedures are in [the maintainer guide](docs/20260823_1348_guide_repository-operations.md). Those instructions are for people operating the signing key, GitHub environment, and Cloudflare R2 publication workflow.
+<!-- END_EXCLUDE -->

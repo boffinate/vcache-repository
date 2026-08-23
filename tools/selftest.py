@@ -113,8 +113,18 @@ def test_markdown_subset() -> None:
     body = site.render_markdown(readme)
     expect("<h1>Vinyl Cache package repository</h1>" in body, "the README renders its top-level heading")
     expect("<ul><li>" in body and "<pre><code>" in body, "the README renders lists and fenced blocks")
-    expect('href="https://github.com/boffinate/vcache-repository/blob/main/docs/' in body,
+    expect("Maintainers" not in body and "<!--" not in body,
+           "excluded README regions and their markers are dropped from the site")
+    expect("## Maintainers" in readme, "the README still carries the maintainer section for GitHub readers")
+    linked = site.render_markdown("See [the guide](docs/guide.md).\n")
+    expect('href="https://github.com/boffinate/vcache-repository/blob/main/docs/guide.md"' in linked,
            "relative README links are rewritten to the source repository")
+    for unbalanced in ("<!-- BEGIN_EXCLUDE -->\ntext\n", "text\n<!-- END_EXCLUDE -->\n",
+                       "<!-- BEGIN_EXCLUDE -->\n<!-- BEGIN_EXCLUDE -->\n<!-- END_EXCLUDE -->\n"):
+        raises(lambda: site.render_markdown(unbalanced), site.SiteError,
+               f"unbalanced exclusion markers accepted: {unbalanced!r}")
+    expect(site.render_markdown("kept\n<!-- BEGIN_EXCLUDE -->\n> not rendered\n<!-- END_EXCLUDE -->\n") == "<p>kept</p>",
+           "excluded regions are removed before the Markdown subset is enforced")
     for unsupported in ("### too deep\n", "> quoted\n", "1. numbered\n", "| a | b |\n",
                         "```\ncode\n```\n", "text with *emphasis*\n", "~~~\nunterminated\n",
                         "an ![image](x.png)\n"):
