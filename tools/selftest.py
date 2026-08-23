@@ -115,11 +115,13 @@ def test_workflow_bootstraps_native_validation_and_container_actions() -> None:
            "Debian-family publisher pins an AWS CLI version compatible with R2 conditional writes")
     expect("awscli-exe-linux-${awscli_arch}-${awscli_version}.zip" in publish,
            "Debian-family publisher selects the official AWS CLI bundle by architecture")
-    for digest in ("72a9e72382bae49c6f0239dbba4affb1d963eb2d22a55b006e69d7b27f6d1a66",
+    for digest in ("db9001fd76d322a2ce9c88b5e1f306c449137541c28d04ca076f3afce366d35d",
                    "317455780b0b3f88b34fd4112a34f98f02239340e3645437405a03750b132ffd"):
         expect(digest in publish, "Debian-family AWS CLI bundle checksum is pinned")
     expect('sha256sum --check --status' in publish and 'aws-cli/2.33.0*' in publish,
            "Debian-family publisher verifies the AWS CLI archive and installed version")
+    expect('AWS CLI archive checksum mismatch' in publish,
+           "Debian-family publisher reports an AWS CLI archive checksum mismatch without exposing data")
 
 
 def test_smokes_retry_with_exact_installed_metadata() -> None:

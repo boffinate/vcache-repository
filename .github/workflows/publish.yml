@@ -101,7 +101,7 @@ jobs:
             case "$(dpkg --print-architecture)" in
               amd64)
                 awscli_arch=x86_64
-                awscli_sha256=72a9e72382bae49c6f0239dbba4affb1d963eb2d22a55b006e69d7b27f6d1a66
+                awscli_sha256=db9001fd76d322a2ce9c88b5e1f306c449137541c28d04ca076f3afce366d35d
                 ;;
               arm64)
                 awscli_arch=aarch64
@@ -113,7 +113,10 @@ jobs:
                 ;;
             esac
             curl --fail --location --silent --show-error --output /tmp/awscliv2.zip "https://awscli.amazonaws.com/awscli-exe-linux-${awscli_arch}-${awscli_version}.zip"
-            printf '%s  %s\n' "$awscli_sha256" /tmp/awscliv2.zip | sha256sum --check --status
+            if ! printf '%s  %s\n' "$awscli_sha256" /tmp/awscliv2.zip | sha256sum --check --status; then
+              echo "AWS CLI archive checksum mismatch" >&2
+              exit 2
+            fi
             unzip -q /tmp/awscliv2.zip -d /tmp
             /tmp/aws/install --install-dir /usr/local/aws-cli --bin-dir /usr/local/bin
             case "$(aws --version 2>&1)" in
