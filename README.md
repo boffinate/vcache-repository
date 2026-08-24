@@ -41,7 +41,7 @@ Install Vinyl Cache:
 sudo apt-get install -y vinyl-cache
 ~~~
 
-The development package is `vinyl-cache-dev`. Current VMOD packages are `vinyl-vmod-cachetag`, `vinyl-vmod-dict`, `vinyl-vmod-pesi`, `vinyl-vmod-remoteip`, and `vinyl-vmod-tbf`:
+The development package is `vinyl-cache-dev`. VMOD packages are named `vinyl-vmod-<name>`; browse the current set for your target at `https://packages.boffinate.com/vinyl-cache/` or search it locally:
 
 ~~~sh
 sudo apt-get install -y vinyl-cache-dev vinyl-vmod-cachetag
@@ -77,7 +77,7 @@ Install Vinyl Cache:
 sudo dnf install -y vinyl-cache
 ~~~
 
-The development package is `vinyl-cache-devel`. Current VMOD packages are `vinyl-vmod-cachetag`, `vinyl-vmod-dict`, `vinyl-vmod-pesi`, `vinyl-vmod-remoteip`, and `vinyl-vmod-tbf`:
+The development package is `vinyl-cache-devel`. VMOD packages are named `vinyl-vmod-<name>`; browse the current set for your target at `https://packages.boffinate.com/vinyl-cache/` or search it locally:
 
 ~~~sh
 sudo dnf install -y vinyl-cache-devel vinyl-vmod-cachetag
