@@ -61,7 +61,7 @@ Run these steps in order. Steps 1, 2 and 4 are manual.
 
 ## Regenerate the site
 
-Dispatch `site.yml` from `main` to rebuild every page from the current bucket contents without republishing packages. It shares the publication concurrency group, so it can never snapshot a half-uploaded target. Use it after editing `README.md`, which is the source of the root page, or the page template. A run that finds nothing changed uploads nothing and purges nothing.
+Dispatch `site.yml` from `main` to rebuild every page from the current bucket contents without republishing packages; `scripts/dispatch-publish.sh --site` dispatches, approves, and watches it for you. It shares the publication concurrency group, so it can never snapshot a half-uploaded target. Use it after editing `README.md`, which is the source of the root page, or the page template. A run that finds nothing changed uploads nothing and purges nothing.
 
 Expected archive-key fingerprint:
 
@@ -73,16 +73,17 @@ The publisher writes the public-key object only when it is absent. If it already
 
 ## Publish a release
 
-Dispatch `publish.yml` from `main` with a `source_tag`, such as `vinyl-9.0.1-debian-13-amd64`. The workflow fetches and validates assets from the fixed `boffinate/vcache-packaging` producer repository before the protected signing job starts.
+The quick path is the maintainer driver, which needs an authenticated `gh` CLI on a maintainer host:
 
-Supported target suffixes are:
+~~~sh
+scripts/dispatch-publish.sh
+scripts/dispatch-publish.sh el10-x86_64
+scripts/dispatch-publish.sh --release vinyl-9.0.1 --dry-run
+~~~
 
-- `debian-13-amd64`
-- `debian-13-arm64`
-- `ubuntu-26.04-amd64`
-- `ubuntu-26.04-arm64`
-- `el10-x86_64`
-- `el10-aarch64`
+The first form publishes the newest producer wave to every `routes.tsv` target; the second restricts the wave to the named targets; `--dry-run` prints the planned dispatches without starting anything. The driver derives every `source_tag` from `routes.tsv` and the producer's releases, so no per-target tag needs to be remembered, and a new route joins the wave as soon as its line lands in `routes.tsv`. After a confirmation prompt it dispatches `publish.yml` one target at a time, because the publication concurrency group retains only one pending run, approves each run's `production` gate through the API as the maintainer running it, and stops at the first failure so the recovery procedure below can be applied before the wave continues. Pass `--no-approve` to keep the browser approval step instead. The driver reaches only what `publish.yml` publishes; a future AUR lane will not flow through it.
+
+Dispatching by hand remains supported: dispatch `publish.yml` from `main` with a `source_tag`, such as `vinyl-9.0.1-debian-13-amd64`, wait for the protected environment approval, and let `fetch`, `publish`, and `smoke` succeed before starting the next target. A `source_tag` is the producer release's engine id plus one target id from the first column of `routes.tsv`. The workflow fetches and validates assets from the fixed `boffinate/vcache-packaging` producer repository before the protected signing job starts.
 
 For APT, the workflow uses `reprepro` to sign `Release`, `Release.gpg`, and `InRelease`. For RPM, it signs package payloads with `rpmsign` and repository metadata with a detached OpenPGP signature. Published RPM configuration requires both `gpgcheck=1` and `repo_gpgcheck=1`.
 
