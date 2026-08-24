@@ -105,6 +105,15 @@ sudo dnf makecache
 
 Remove Vinyl Cache or a VMOD separately with its exact package name if you no longer need it.
 
+## Source, bugs, and feature requests
+
+There are two open-source repositories powering this:
+
+- [vcache-packaging](https://github.com/boffinate/vcache-packaging) builds the packages: it controls which VMODs to include, compiles them against Vinyl Cache, and maintains the compatibility matrix showing which VMOD versions work with which engine versions.
+- [vcache-repository](https://github.com/boffinate/vcache-repository) signs and publishes the packages, builds the APT and RPM repositories, and the repository browser.
+
+We welcome bug reports and feature requests. If a package's contents are wrong, a build fails, or you want a new VMOD, open an issue on [vcache-packaging](https://github.com/boffinate/vcache-packaging/issues). If you hit trouble installing, verifying, or downloading packages from this site, open an issue on [vcache-repository](https://github.com/boffinate/vcache-repository/issues).
+
 <!-- BEGIN_EXCLUDE -->
 ## Maintainers
 
