@@ -1,6 +1,6 @@
-# Vinyl Cache package repository
+# Varnish Cache and Vinyl Cache package repository
 
-This repository provides signed Debian and RPM packages for Vinyl Cache 9.0.1. Packages are available now for:
+This repository provides signed Debian and RPM packages for Varnish Cache 9.0.3, Vinyl Cache 9.0.1, and compatible VMODs. Packages are available for:
 
 - Debian 13 on amd64 and arm64
 - Ubuntu 26.04 on amd64 and arm64
@@ -18,10 +18,11 @@ AED8146A22F2973E48AE6A1118361320BD4BACCD
 
 ## Debian 13 and Ubuntu 26.04
 
-Choose the target that matches your distribution and architecture: `debian-13-amd64`, `debian-13-arm64`, `ubuntu-26.04-amd64`, or `ubuntu-26.04-arm64`. Set `target` to that value, then run:
+Choose the target that matches your distribution and architecture: `debian-13-amd64`, `debian-13-arm64`, `ubuntu-26.04-amd64`, or `ubuntu-26.04-arm64`. Set `family` to `varnish` or `vinyl`, set `target` to the matching value, then run:
 
 ~~~sh
 url=https://packages.boffinate.com/vinyl-cache
+family=vinyl
 target=debian-13-amd64
 fingerprint=AED8146A22F2973E48AE6A1118361320BD4BACCD
 
@@ -31,7 +32,7 @@ sudo install -d -m 0755 /etc/apt/keyrings
 curl -fsS "$url/vcache-archive-keyring.asc" -o /tmp/vcache-archive-keyring.asc
 test "$(gpg --show-keys --with-colons /tmp/vcache-archive-keyring.asc | awk -F: '$1 == "fpr" {print $10; exit}')" = "$fingerprint"
 sudo install -m 0644 /tmp/vcache-archive-keyring.asc /etc/apt/keyrings/vcache-archive-keyring.asc
-sudo curl -fsS "$url/apt/vinyl/$target/vcache-vinyl.sources" -o /etc/apt/sources.list.d/vcache.sources
+sudo curl -fsS "$url/apt/$family/$target/vcache-$family.sources" -o /etc/apt/sources.list.d/vcache.sources
 sudo apt-get update
 ~~~
 
@@ -41,28 +42,35 @@ Install Vinyl Cache:
 sudo apt-get install -y vinyl-cache
 ~~~
 
-The development package is `vinyl-cache-dev`. VMOD packages are named `vinyl-vmod-<name>`; browse the current set for your target at `https://packages.boffinate.com/vinyl-cache/` or search it locally:
+Or, with `family=varnish`, install Varnish Cache:
+
+~~~sh
+sudo apt-get install -y varnish
+~~~
+
+The development packages are `vinyl-cache-dev` and `varnish-dev`. VMOD packages are named `vinyl-vmod-<name>` or `varnish-vmod-<name>`; browse the current set for your target at `https://packages.boffinate.com/vinyl-cache/` or search it locally:
 
 ~~~sh
 sudo apt-get install -y vinyl-cache-dev vinyl-vmod-cachetag
-apt-cache search '^vinyl-vmod-'
+apt-cache search '^(vinyl|varnish)-vmod-'
 ~~~
 
-Install any VMOD you need by name. VMOD packages depend on the matching Vinyl Cache package version, so let APT upgrade them together.
+Install any VMOD you need by name. VMOD packages depend on the matching engine package version, so let APT upgrade them together.
 
 ## Enterprise Linux 10
 
-The RPM repository is available for x86_64 and aarch64. Its configuration uses your system's architecture automatically.
+The RPM repository is available for x86_64 and aarch64. Set `family` to `varnish` or `vinyl`; its configuration uses your system's architecture automatically.
 
 ~~~sh
 url=https://packages.boffinate.com/vinyl-cache
+family=vinyl
 fingerprint=AED8146A22F2973E48AE6A1118361320BD4BACCD
 
 sudo dnf install -y ca-certificates curl-minimal gnupg2
 curl -fsS "$url/vcache-archive-keyring.asc" -o /tmp/vcache-archive-keyring.asc
 test "$(gpg --show-keys --with-colons /tmp/vcache-archive-keyring.asc | awk -F: '$1 == "fpr" {print $10; exit}')" = "$fingerprint"
 sudo install -m 0644 /tmp/vcache-archive-keyring.asc /etc/pki/rpm-gpg/vcache-archive-keyring.asc
-sudo curl -fsS "$url/rpm/vinyl/vcache-vinyl.repo" -o /etc/yum.repos.d/vcache.repo
+sudo curl -fsS "$url/rpm/$family/vcache-$family.repo" -o /etc/yum.repos.d/vcache.repo
 grep -qx 'gpgcheck=1' /etc/yum.repos.d/vcache.repo
 grep -qx 'repo_gpgcheck=1' /etc/yum.repos.d/vcache.repo
 sudo dnf install -y epel-release
@@ -77,11 +85,17 @@ Install Vinyl Cache:
 sudo dnf install -y vinyl-cache
 ~~~
 
-The development package is `vinyl-cache-devel`. VMOD packages are named `vinyl-vmod-<name>`; browse the current set for your target at `https://packages.boffinate.com/vinyl-cache/` or search it locally:
+Or, with `family=varnish`, install Varnish Cache:
+
+~~~sh
+sudo dnf install -y varnish
+~~~
+
+The development packages are `vinyl-cache-devel` and `varnish-devel`. VMOD packages are named `vinyl-vmod-<name>` or `varnish-vmod-<name>`; browse the current set for your target at `https://packages.boffinate.com/vinyl-cache/` or search it locally:
 
 ~~~sh
 sudo dnf install -y vinyl-cache-devel vinyl-vmod-cachetag
-dnf search vinyl-vmod
+dnf search vmod
 ~~~
 
 ## Updates and removal
@@ -103,13 +117,13 @@ sudo rm /etc/yum.repos.d/vcache.repo /etc/pki/rpm-gpg/vcache-archive-keyring.asc
 sudo dnf makecache
 ~~~
 
-Remove Vinyl Cache or a VMOD separately with its exact package name if you no longer need it.
+Remove either engine or a VMOD separately with its exact package name if you no longer need it.
 
 ## Source, bugs, and feature requests
 
 There are two open-source repositories powering this:
 
-- [vcache-packaging](https://github.com/boffinate/vcache-packaging) builds the packages: it controls which VMODs to include, compiles them against Vinyl Cache, and maintains the compatibility matrix showing which VMOD versions work with which engine versions.
+- [vcache-packaging](https://github.com/boffinate/vcache-packaging) builds the packages: it controls which VMODs to include, compiles them against Varnish Cache and Vinyl Cache, and maintains the compatibility matrix showing which VMOD versions work with which engine versions.
 - [vcache-repository](https://github.com/boffinate/vcache-repository) signs and publishes the packages, builds the APT and RPM repositories, and the repository browser.
 
 We welcome bug reports and feature requests. If a package's contents are wrong, a build fails, or you want a new VMOD, open an issue on [vcache-packaging](https://github.com/boffinate/vcache-packaging/issues). If you hit trouble installing, verifying, or downloading packages from this site, open an issue on [vcache-repository](https://github.com/boffinate/vcache-repository/issues).

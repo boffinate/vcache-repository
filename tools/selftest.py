@@ -111,7 +111,10 @@ def test_markdown_subset() -> None:
     expect("packages.boffinate.com/vinyl-cache/" in readme,
            "the README points readers at the browsable repository")
     body = site.render_markdown(readme)
-    expect("<h1>Vinyl Cache package repository</h1>" in body, "the README renders its top-level heading")
+    expect(
+        "<h1>Varnish Cache and Vinyl Cache package repository</h1>" in body,
+        "the README renders its top-level heading",
+    )
     expect("<ul><li>" in body and "<pre><code>" in body, "the README renders lists and fenced blocks")
     expect("Maintainers" not in body and "<!--" not in body,
            "excluded README regions and their markers are dropped from the site")
