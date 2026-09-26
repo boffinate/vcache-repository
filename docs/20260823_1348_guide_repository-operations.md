@@ -104,3 +104,5 @@ The public-client smoke test starts a new native container for every attempt. It
 A final smoke-test failure is actionable. Retain the workflow logs, check the custom-domain mapping and the `vinyl-cache/` cache rule, fix the external condition, then rerun the same source tag.
 
 Successful smoke output proves that the installed Debian package version and architecture, or installed RPM NEVRA, exactly match the validated producer assets. Treat any mismatch as a repository-integrity incident: stop further dispatches, preserve logs and object identifiers, investigate, and only then retry.
+
+The APT smoke test requests each validated producer version explicitly. A distribution's VMOD version can sort above the upstream version in this repository while requiring an older engine ABI, as Debian 13's `varnish-vmod-digest` does. This check proves the published set installs together; it does not prove APT will choose every package from this repository when asked for unversioned names. Use `apt-cache policy PACKAGE` to inspect candidates and `apt-get install PACKAGE=VERSION` to select a published version when needed.
