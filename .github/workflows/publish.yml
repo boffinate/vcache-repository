@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       source_tag:
-        description: "Completed producer tag, for example vinyl-X.Y.Z-el10-x86_64"
+        description: "Completed producer tag, for example vinyl-X.Y.Z-rN-el10-x86_64"
         required: true
         type: string
 

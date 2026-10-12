@@ -54,10 +54,12 @@ def armored_key_fingerprint(path: Path) -> str:
 
 def test_routes_and_tag() -> None:
     table = release.routes(Path(__file__).parents[1] / "routes.tsv")
-    family, version, target, route = release.route_for_tag("vinyl-42.3.7-debian-13-amd64", table)
-    expect((family, version, target, route["format"], route["arch"]) ==
-           ("vinyl", "42.3.7", "debian-13-amd64", "deb", "amd64"), "route resolution")
-    for bad in ("vinyl-42.3.7-nope", "../x-debian-13-amd64", "varnish-el10-x86_64"):
+    family, version, revision, target, route = release.route_for_tag("vinyl-42.3.7-r2-debian-13-amd64", table)
+    expect((family, version, revision, target, route["format"], route["arch"]) ==
+           ("vinyl", "42.3.7", "2", "debian-13-amd64", "deb", "amd64"), "route resolution")
+    for bad in ("vinyl-42.3.7-debian-13-amd64", "vinyl-42.3.7-r0-debian-13-amd64",
+                "vinyl-42.3.7-r02-debian-13-amd64", "vinyl-42.3.7-r2-nope",
+                "../x-r2-debian-13-amd64", "varnish-r2-el10-x86_64"):
         rejects(lambda: release.route_for_tag(bad, table), f"unsafe or unknown tag accepted: {bad}")
 
 
@@ -100,6 +102,65 @@ def test_revision_order_inputs() -> None:
     wrong_rpm_engine = rpm_engine | {"version": "42.3.8"}
     rejects(lambda: release.package_revision(wrong_rpm_engine, "vinyl", "42.3.7", "rpm"),
             "RPM engine version may disagree with the source tag")
+
+
+def test_tag_revision_binds_native_metadata() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        stage = Path(directory)
+        runtime = stage / "vinyl-cache_42.3.7-2_amd64.deb"
+        development = stage / "vinyl-cache-dev_42.3.7-2_amd64.deb"
+        for package in (runtime, development):
+            package.write_bytes(package.name.encode())
+        (stage / "SHA256SUMS").write_text("".join(
+            f"{release.sha256(package)}  {package.name}\n" for package in (runtime, development)))
+        original = release.package_metadata
+        release.package_metadata = lambda path, fmt: {
+            "name": "vinyl-cache-dev" if "-dev_" in path.name else "vinyl-cache",
+            "version": "42.3.7-2", "arch": "amd64", "release": ""
+        }
+        try:
+            release.validate_stage(stage, "vinyl-42.3.7-r2-debian-13-amd64",
+                                   Path(__file__).parents[1] / "routes.tsv")
+            rejects(lambda: release.validate_stage(stage, "vinyl-42.3.7-r3-debian-13-amd64",
+                                                    Path(__file__).parents[1] / "routes.tsv"),
+                    "tag revision may disagree with native metadata")
+            development.unlink()
+            (stage / "SHA256SUMS").write_text(f"{release.sha256(runtime)}  {runtime.name}\n")
+            rejects(lambda: release.validate_stage(stage, "vinyl-42.3.7-r2-debian-13-amd64",
+                                                    Path(__file__).parents[1] / "routes.tsv"),
+                    "missing development package was accepted")
+            development.write_bytes(b"development")
+            runtime.unlink()
+            (stage / "SHA256SUMS").write_text(f"{release.sha256(development)}  {development.name}\n")
+            rejects(lambda: release.validate_stage(stage, "vinyl-42.3.7-r2-debian-13-amd64",
+                                                    Path(__file__).parents[1] / "routes.tsv"),
+                    "missing runtime package was accepted")
+            runtime.write_bytes(b"runtime")
+            duplicate = stage / "vinyl-cache-copy_42.3.7-2_amd64.deb"
+            duplicate.write_bytes(b"duplicate")
+            (stage / "SHA256SUMS").write_text("".join(
+                f"{release.sha256(package)}  {package.name}\n" for package in (runtime, development, duplicate)))
+            rejects(lambda: release.validate_stage(stage, "vinyl-42.3.7-r2-debian-13-amd64",
+                                                    Path(__file__).parents[1] / "routes.tsv"),
+                    "duplicate native package identity was accepted")
+        finally:
+            release.package_metadata = original
+
+
+def test_fetch_requires_immutable_release() -> None:
+    original_api = release.api_json
+    original_fetch = release.fetch_asset
+    release.api_json = lambda path: {"tag_name": "vinyl-42.3.7-r2-debian-13-amd64", "draft": False,
+                                     "prerelease": False, "immutable": False, "assets": []}
+    release.fetch_asset = lambda url, destination: None
+    try:
+        with tempfile.TemporaryDirectory() as directory:
+            rejects(lambda: release.fetch("vinyl-42.3.7-r2-debian-13-amd64", Path(directory) / "stage",
+                                          Path(__file__).parents[1] / "routes.tsv"),
+                    "mutable release was accepted")
+    finally:
+        release.api_json = original_api
+        release.fetch_asset = original_fetch
 
 
 def test_markdown_subset() -> None:
@@ -309,6 +370,8 @@ def test_verify_workflow_lints_and_exercises_publishers() -> None:
     root = Path(__file__).parents[1]
     workflow = (root / ".github/workflows/verify.yml").read_text()
     expect("rhysd/actionlint@sha256:" in workflow, "workflow lint must use a pinned actionlint image")
+    expect("bash scripts/test-dispatch-publish.sh" in workflow,
+           "verification must exercise dispatcher release selection with a fake GitHub API")
     expect("koalaman/shellcheck@sha256:" in workflow, "shell lint must use a pinned ShellCheck image")
     expect("container: debian:13" in workflow and "test-publish-roundtrip.sh deb" in workflow,
            "verification must run the Debian publisher round trip in its native container")
@@ -336,6 +399,7 @@ def test_verify_workflow_lints_and_exercises_publishers() -> None:
 def main() -> int:
     for test in (test_routes_and_tag, test_strict_checksums,
                  test_release_asset_names_reserve_handoff_markers, test_revision_order_inputs,
+                 test_tag_revision_binds_native_metadata, test_fetch_requires_immutable_release,
                  test_markdown_subset, test_site_generator, test_purge_batching,
                  test_workflow_keeps_secrets_after_validation,
                  test_workflow_bootstraps_native_validation_and_container_actions,

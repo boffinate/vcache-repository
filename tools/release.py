@@ -16,7 +16,7 @@ from pathlib import Path
 
 PRODUCER_REPO = "boffinate/vcache-packaging"
 API_ROOT = "https://api.github.com"
-TAG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+~-]*-[A-Za-z0-9][A-Za-z0-9._-]*$")
+TAG_RE = re.compile(r"^(vinyl|varnish)-([0-9]+\.[0-9]+\.[0-9]+)-r([1-9][0-9]*)$")
 SHA_RE = re.compile(r"^([0-9a-f]{64})  ([^/\r\n]+)$")
 REV_RE = re.compile(r"^[1-9][0-9]*$")
 HANDOFF_FILES = {".source-tag", ".validated"}
@@ -43,20 +43,16 @@ def routes(path: Path) -> dict[str, dict[str, str]]:
     return out
 
 
-def route_for_tag(tag: str, table: dict[str, dict[str, str]]) -> tuple[str, str, str, dict[str, str]]:
-    if not TAG_RE.fullmatch(tag):
-        raise ValidationError("source tag contains unsafe characters")
+def route_for_tag(tag: str, table: dict[str, dict[str, str]]) -> tuple[str, str, str, str, dict[str, str]]:
     matches = [(target, tag[: -(len(target) + 1)]) for target in table if tag.endswith("-" + target)]
     if len(matches) != 1 or not matches[0][1]:
         raise ValidationError("source tag does not end in exactly one allowed target")
-    target, engine = matches[0]
-    family = engine.split("-", 1)[0]
-    if family not in ("vinyl", "varnish"):
-        raise ValidationError(f"unsupported engine family {family!r}")
-    engine_version = engine[len(family) + 1:]
-    if not engine_version:
-        raise ValidationError("source tag has no engine version")
-    return family, engine_version, target, table[target]
+    target, source = matches[0]
+    match = TAG_RE.fullmatch(source)
+    if not match:
+        raise ValidationError("source tag must be <engine>-r<positive revision>-<target>")
+    family, engine_version, revision = match.groups()
+    return family, engine_version, revision, target, table[target]
 
 
 def sha256(path: Path) -> str:
@@ -132,6 +128,11 @@ def is_engine_package(name: str, family: str) -> bool:
     return name == prefix or (name.startswith(prefix + "-") and not name.startswith(family + "-vmod-"))
 
 
+def required_engine_packages(family: str, fmt: str) -> set[str]:
+    runtime = "vinyl-cache" if family == "vinyl" else "varnish"
+    return {runtime, runtime + ("-dev" if fmt == "deb" else "-devel")}
+
+
 def package_revision(meta: dict[str, str], family: str, engine_version: str, fmt: str) -> str:
     engine_name = is_engine_package(meta["name"], family)
     if fmt == "deb":
@@ -162,21 +163,30 @@ def package_revision(meta: dict[str, str], family: str, engine_version: str, fmt
 
 def validate_stage(stage: Path, tag: str, route_file: Path) -> None:
     table = routes(route_file)
-    family, engine_version, target, route = route_for_tag(tag, table)
+    family, engine_version, tag_revision, target, route = route_for_tag(tag, table)
     digests = checksum_map(stage)
     package_paths = sorted(stage / name for name in digests)
     if any(p.suffix != ("." + route["format"]) for p in package_paths):
         raise ValidationError("release mixes package formats or disagrees with route")
     revisions = set()
+    names = set()
+    identities = set()
     for path in package_paths:
         meta = package_metadata(path, route["format"])
         if meta["arch"] != route["arch"]:
             raise ValidationError(f"{path.name}: architecture {meta['arch']} disagrees with route")
         if not (is_engine_package(meta["name"], family) or meta["name"].startswith(f"{family}-vmod-")):
             raise ValidationError(f"{path.name}: package family mismatch")
+        identity = (meta["name"], meta["version"], meta["release"], meta["arch"])
+        if identity in identities:
+            raise ValidationError("release contains duplicate native package identities")
+        identities.add(identity)
+        names.add(meta["name"])
         revisions.add(package_revision(meta, family, engine_version, route["format"]))
-    if len(revisions) != 1:
-        raise ValidationError("package set has multiple revisions")
+    if not required_engine_packages(family, route["format"]).issubset(names):
+        raise ValidationError("release is missing required engine runtime or development package")
+    if revisions != {tag_revision}:
+        raise ValidationError("package revisions do not match source tag")
 
 
 @contextmanager
@@ -209,9 +219,13 @@ def fetch(tag: str, stage: Path, route_file: Path) -> None:
     if stage.exists() and any(stage.iterdir()):
         raise ValidationError("release stage must be empty")
     release = api_json(f"/repos/{PRODUCER_REPO}/releases/tags/{urllib.parse.quote(tag, safe='')}")
-    if release.get("draft") or release.get("prerelease"):
-        raise ValidationError("release must be non-draft and non-prerelease")
+    if release.get("tag_name") != tag:
+        raise ValidationError("release tag does not match requested source tag")
+    if release.get("draft") is not False or release.get("prerelease") is not False or release.get("immutable") is not True:
+        raise ValidationError("release must be immutable, non-draft, and non-prerelease")
     assets = release.get("assets", [])
+    if any(asset.get("state") != "uploaded" for asset in assets):
+        raise ValidationError("release contains an asset that is not uploaded")
     names = [asset.get("name", "") for asset in assets]
     validate_asset_names(names)
     stage.mkdir(parents=True, exist_ok=True)
@@ -232,7 +246,7 @@ def verify_command(stage: Path, route_file: Path) -> None:
 
 def describe(stage: Path, route_file: Path) -> None:
     tag = (stage / ".source-tag").read_text().strip()
-    family, _, target, route = route_for_tag(tag, routes(route_file))
+    family, _, _, target, route = route_for_tag(tag, routes(route_file))
     print("\t".join((family, target, route["format"], route["arch"], route["image"], route["platform"])))
 
 

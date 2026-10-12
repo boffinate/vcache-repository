@@ -76,14 +76,14 @@ The publisher writes the public-key object only when it is absent. If it already
 The quick path is the maintainer driver, which needs an authenticated `gh` CLI on a maintainer host:
 
 ~~~sh
-scripts/dispatch-publish.sh
-scripts/dispatch-publish.sh el10-x86_64
-scripts/dispatch-publish.sh --release vinyl-9.0.1 --dry-run
+scripts/dispatch-publish.sh --release vinyl-9.0.1 --revision 9
+scripts/dispatch-publish.sh --release vinyl-9.0.1 --revision 9 el10-x86_64
+scripts/dispatch-publish.sh --release vinyl-9.0.1 --revision 9 --dry-run
 ~~~
 
-The first form publishes the newest producer wave to every `routes.tsv` target; the second restricts the wave to the named targets; `--dry-run` prints the planned dispatches without starting anything. The driver derives every `source_tag` from `routes.tsv` and the producer's releases, so no per-target tag needs to be remembered, and a new route joins the wave as soon as its line lands in `routes.tsv`. After a confirmation prompt it dispatches `publish.yml` one target at a time, because the publication concurrency group retains only one pending run, approves each run's `production` gate through the API as the maintainer running it, and stops at the first failure so the recovery procedure below can be applied before the wave continues. Pass `--no-approve` to keep the browser approval step instead. The driver reaches only what `publish.yml` publishes; a future AUR lane will not flow through it.
+The first form publishes the explicitly selected engine revision to every `routes.tsv` target; the second restricts it to the named targets; `--dry-run` prints the planned dispatches without starting anything. The driver derives every `source_tag` from the engine, revision and target. Before dispatching, it requires every selected release to be immutable and every tag to resolve to the same packaging commit. Missing targets or mixed commits stop the wave; it never substitutes another revision. After a confirmation prompt it dispatches `publish.yml` one target at a time, because the publication concurrency group retains only one pending run, approves each run's `production` gate through the API as the maintainer running it, and stops at the first failure so the recovery procedure below can be applied before the wave continues. Pass `--no-approve` to keep the browser approval step instead. The driver reaches only what `publish.yml` publishes; a future AUR lane will not flow through it.
 
-Dispatching by hand remains supported: dispatch `publish.yml` from `main` with a `source_tag`, such as `vinyl-9.0.1-debian-13-amd64`, wait for the protected environment approval, and let `fetch`, `publish`, and `smoke` succeed before starting the next target. A `source_tag` is the producer release's engine id plus one target id from the first column of `routes.tsv`. The workflow fetches and validates assets from the fixed `boffinate/vcache-packaging` producer repository before the protected signing job starts.
+Dispatching by hand remains supported: dispatch `publish.yml` from `main` with a `source_tag`, such as `vinyl-9.0.1-r9-debian-13-amd64`, wait for the protected environment approval, and let `fetch`, `publish`, and `smoke` succeed before starting the next target. A `source_tag` contains the producer's engine id, positive package revision, and one target id from the first column of `routes.tsv`. Unrevisioned or mutable releases are rejected. The workflow fetches and validates assets from the fixed `boffinate/vcache-packaging` producer repository before the protected signing job starts.
 
 For APT, the workflow uses `reprepro` to sign `Release`, `Release.gpg`, and `InRelease`. For RPM, it signs package payloads with `rpmsign` and repository metadata with a detached OpenPGP signature. Published RPM configuration requires both `gpgcheck=1` and `repo_gpgcheck=1`.
 

@@ -4,9 +4,9 @@ Status: normative for the v1 sibling distributor.
 
 ## Input contract
 
-The producer repository is the checked-in constant `boffinate/vcache-packaging` in `tools/release.py`; dispatch accepts only `source_tag`. Tags have the form `<engine-id>-<target-id>`, are non-draft/non-prerelease, and contain exactly the package set plus `SHA256SUMS`.
+The producer repository is the checked-in constant `boffinate/vcache-packaging` in `tools/release.py`; dispatch accepts only `source_tag`. Tags have the form `<engine-id>-r<package_revision>-<target-id>`, are immutable, non-draft/non-prerelease, and contain exactly the package set plus `SHA256SUMS`. Legacy unrevisioned tags are rejected. The positive decimal revision has no leading zeroes and must match every native package revision. The maintainer driver requires an explicit engine and revision, and verifies that all selected target tags resolve to one packaging commit before dispatching.
 
-`SHA256SUMS` uses lowercase SHA-256, two spaces, and basename-only filenames. It covers every package and not itself. Validation resolves one release, downloads by asset ID into a temporary directory, verifies the exact asset set and checksums, matches the tag to `routes.tsv`, and checks native package metadata before secrets or R2 are available. It is an integrity contract, not provenance.
+`SHA256SUMS` uses lowercase SHA-256, two spaces, and basename-only filenames. It covers every package and not itself. Validation resolves one release, downloads by asset ID into a temporary directory, verifies the exact asset set and checksums, matches the tag to `routes.tsv`, and checks native package metadata before secrets or R2 are available. Validation requires the runtime and development engine packages and rejects duplicate native package identities. The producer catalog gate remains authoritative for the complete promoted VMOD cohort; the distributor does not maintain a second copy of that catalog. It is an integrity contract, not provenance.
 
 ## Routes and roots
 

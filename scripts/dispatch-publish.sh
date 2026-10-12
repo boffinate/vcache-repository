@@ -20,8 +20,8 @@ Publish every routes.tsv target (or only the named targets) from one producer
 release wave, in order, one workflow run at a time.
 
 options:
-  --release <engine-id>  producer release prefix, for example vinyl-9.0.1;
-                         default: the newest engine id with producer releases
+  --release <engine-id>  producer engine id, for example vinyl-9.0.1
+  --revision <N>         positive package revision to publish
   --site                 dispatch site.yml instead of any publication
   --no-approve           do not self-approve; wait for a browser approval
   --dry-run              print the planned dispatches and exit
@@ -34,6 +34,7 @@ die() { echo "error: $*" >&2; exit 2; }
 need() { command -v "$1" >/dev/null 2>&1 || die "missing command: $1"; }
 
 RELEASE=
+REVISION=
 SITE_ONLY=0
 APPROVE=1
 DRY_RUN=0
@@ -42,6 +43,7 @@ TARGETS=()
 while [[ $# -gt 0 ]]; do
   case $1 in
     --release) [[ $# -ge 2 ]] || usage; RELEASE=$2; shift 2 ;;
+    --revision) [[ $# -ge 2 ]] || usage; REVISION=$2; shift 2 ;;
     --site) SITE_ONLY=1; shift ;;
     --no-approve) APPROVE=0; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
@@ -74,6 +76,23 @@ refuse_active_runs() {
 
 latest_run_id() {
   gh run list -R "$REPO" --workflow "$1" --limit 1 --json databaseId --jq '.[0].databaseId // 0'
+}
+
+release_is_live_and_immutable() {
+  local tag=$1 observed
+  observed=$(gh api "repos/$PRODUCER/releases/tags/$tag" \
+    --jq 'if .immutable == true and .draft == false and .prerelease == false then .tag_name else error("release is mutable, draft, or prerelease") end') || return 1
+  [[ $observed == "$tag" ]] || return 1
+}
+
+tag_commit() {
+  local tag=$1 type sha
+  read -r type sha < <(gh api "repos/$PRODUCER/git/ref/tags/$tag" --jq '.object | [.type, .sha] | @tsv') || return 1
+  while [[ $type == tag ]]; do
+    read -r type sha < <(gh api "repos/$PRODUCER/git/tags/$sha" --jq '.object | [.type, .sha] | @tsv') || return 1
+  done
+  [[ $type == commit && $sha =~ ^[0-9a-f]{40}$ ]] || return 1
+  printf '%s\n' "$sha"
 }
 
 # Approve the protected-environment gate when it appears, then hand off to
@@ -118,7 +137,7 @@ watch_run() {
 }
 
 if (( SITE_ONLY )); then
-  [[ -z $RELEASE && ${#TARGETS[@]} -eq 0 ]] || die "--site takes no release or targets"
+  [[ -z $RELEASE && -z $REVISION && ${#TARGETS[@]} -eq 0 ]] || die "--site takes no release, revision, or targets"
   if (( DRY_RUN )); then echo "would dispatch site.yml"; exit 0; fi
   refuse_active_runs
   confirm "Dispatch site.yml as $LOGIN?"
@@ -143,43 +162,28 @@ else
   done
 fi
 
-if [[ -z $RELEASE ]]; then
-  # Newest engine id with a live producer release for a known target. The
-  # API's ISO-8601 timestamps are all UTC Zulu, so lexicographic comparison
-  # orders them without host-dependent date parsing.
-  best_time=
-  while IFS=$'\t' read -r tag created; do
-    for known in "${ALL_TARGETS[@]}"; do
-      if [[ $tag == *-"$known" ]]; then
-        engine=${tag%-"$known"}
-        if [[ -z $best_time || $created > $best_time ]]; then
-          best_time=$created
-          RELEASE=$engine
-        fi
-      fi
-    done
-  done < <(gh api "repos/$PRODUCER/releases?per_page=100" \
-    --jq '.[] | select((.draft or .prerelease) | not) | [.tag_name, .created_at] | @tsv')
-  [[ -n $RELEASE ]] || die "no producer release matches any routes.tsv target"
-  echo "discovered newest producer release wave: $RELEASE"
-fi
+[[ -n $RELEASE && -n $REVISION ]] || die "--release and --revision are required"
+[[ $RELEASE =~ ^(vinyl|varnish)-[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "invalid engine id: $RELEASE"
+[[ $REVISION =~ ^[1-9][0-9]*$ ]] || die "--revision must be a positive decimal"
 
-MISSING=()
+COMMITS=()
 for target in "${TARGETS[@]}"; do
-  gh api "repos/$PRODUCER/releases/tags/$RELEASE-$target" \
-    --jq 'if .draft or .prerelease then error("draft") else .tag_name end' >/dev/null 2>&1 ||
-    MISSING+=("$RELEASE-$target")
+  tag="$RELEASE-r$REVISION-$target"
+  release_is_live_and_immutable "$tag" || die "could not verify immutable producer release: $tag"
+  commit=$(tag_commit "$tag") || die "could not resolve producer tag to a commit: $tag"
+  [[ -n ${commit:-} ]] && COMMITS+=("$commit")
 done
-(( ${#MISSING[@]} == 0 )) || die "producer has no live release for: ${MISSING[*]}"
+[[ $(printf '%s\n' "${COMMITS[@]}" | sort -u | wc -l | tr -d ' ') == 1 ]] ||
+  die "requested releases resolve to different tag commits"
 
 echo "planned dispatches, in order:"
-for target in "${TARGETS[@]}"; do echo "  publish.yml  source_tag=$RELEASE-$target"; done
+for target in "${TARGETS[@]}"; do echo "  publish.yml  source_tag=$RELEASE-r$REVISION-$target"; done
 if (( DRY_RUN )); then exit 0; fi
 
 refuse_active_runs
 confirm "Dispatch ${#TARGETS[@]} publication run(s) as $LOGIN?"
 for target in "${TARGETS[@]}"; do
-  tag=$RELEASE-$target
+  tag=$RELEASE-r$REVISION-$target
   echo "== $tag =="
   previous=$(latest_run_id publish.yml)
   gh workflow run -R "$REPO" publish.yml -f "source_tag=$tag"

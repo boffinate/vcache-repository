@@ -176,14 +176,17 @@ Priority: optional
 Description: Repository publisher test package
 EOF
   dpkg-deb --build "$root" "$destination/vinyl-cache_${version}_$DEB_ARCH.deb" >/dev/null
+  sed -i 's/^Package: vinyl-cache$/Package: vinyl-cache-dev/' "$root/DEBIAN/control"
+  dpkg-deb --build "$root" "$destination/vinyl-cache-dev_${version}_$DEB_ARCH.deb" >/dev/null
 }
 
 build_rpm() {
-  local revision=$1 destination=$2
+  local revision=$1 destination=$2 package
   local topdir="$TMP/rpmbuild-$revision"
   mkdir -p "$topdir/SPECS"
-  cat >"$topdir/SPECS/vinyl-cache.spec" <<EOF
-Name: vinyl-cache
+  for package in vinyl-cache vinyl-cache-devel; do
+    cat >"$topdir/SPECS/$package.spec" <<EOF
+Name: $package
 Version: 42.3.7
 Release: $revision
 Summary: Repository publisher test package
@@ -194,24 +197,25 @@ BuildArch: $RPM_ARCH
 Repository publisher test package.
 
 %install
-mkdir -p %{buildroot}/usr/share/vinyl-cache
-printf 'test\n' > %{buildroot}/usr/share/vinyl-cache/test
+mkdir -p %{buildroot}/usr/share/$package
+printf 'test\n' > %{buildroot}/usr/share/$package/test
 
 %files
-/usr/share/vinyl-cache/test
+/usr/share/$package/test
 EOF
-  rpmbuild --define "_topdir $topdir" -bb "$topdir/SPECS/vinyl-cache.spec" >/dev/null
-  cp "$topdir/RPMS/$RPM_ARCH/vinyl-cache-42.3.7-$revision.$RPM_ARCH.rpm" "$destination/"
+    rpmbuild --define "_topdir $topdir" -bb "$topdir/SPECS/$package.spec" >/dev/null
+    cp "$topdir/RPMS/$RPM_ARCH/$package-42.3.7-$revision.$RPM_ARCH.rpm" "$destination/"
+  done
 }
 
 seal_stage() {
-  local stage=$1 package packages
+  local stage=$1 tag=$2 package packages
   mapfile -t packages < <(find "$stage" -maxdepth 1 -type f -name "*.$FORMAT" -printf '%f\n' | sort)
   (( ${#packages[@]} > 0 ))
   for package in "${packages[@]}"; do
     printf '%s  %s\n' "$(sha256sum "$stage/$package" | awk '{print $1}')" "$package"
   done >"$stage/SHA256SUMS"
-  printf '%s\n' "$TAG" >"$stage/.source-tag"
+  printf '%s\n' "$tag" >"$stage/.source-tag"
   printf 'ok\n' >"$stage/.validated"
   python3 "$REPO/tools/release.py" verify --stage "$stage" --routes "$REPO/routes.tsv"
 }
@@ -235,7 +239,8 @@ Priority: optional
 Description: Repository publisher test VMOD
 EOF
   dpkg-deb --build "$VMOD_ROOT" "$STAGE/vinyl-vmod-example_1.7-1.vinyl42.3.7.1_$DEB_ARCH.deb" >/dev/null
-  TAG=vinyl-42.3.7-$DEB_TARGET
+  TAG=vinyl-42.3.7-r1-$DEB_TARGET
+  NEXT_TAG=vinyl-42.3.7-r2-$DEB_TARGET
   PUBLISHER=apt
   PREFIX_KEY="vinyl-cache/apt/vinyl/$DEB_TARGET"
   CLIENT_KEY="$PREFIX_KEY/vcache-vinyl.sources"
@@ -251,7 +256,8 @@ else
     *) echo "unsupported RPM test architecture: $RPM_ARCH" >&2; exit 2 ;;
   esac
   build_rpm 1 "$STAGE"
-  TAG=vinyl-42.3.7-$RPM_TARGET
+  TAG=vinyl-42.3.7-r1-$RPM_TARGET
+  NEXT_TAG=vinyl-42.3.7-r2-$RPM_TARGET
   PUBLISHER=rpm
   PREFIX_KEY="vinyl-cache/rpm/vinyl/$RPM_TARGET"
   CLIENT_KEY="vinyl-cache/rpm/vinyl/vcache-vinyl.repo"
@@ -260,8 +266,8 @@ else
   PAYLOAD_GLOB="$STORE/$PREFIX_KEY/Packages"
   build_rpm 2 "$NEXT_STAGE"
 fi
-seal_stage "$STAGE"
-seal_stage "$NEXT_STAGE"
+seal_stage "$STAGE" "$TAG"
+seal_stage "$NEXT_STAGE" "$NEXT_TAG"
 
 export PATH="$MOCK_BIN:$PATH"
 export MOCK_R2_DIR="$STORE"

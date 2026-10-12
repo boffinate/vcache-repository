@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+[[ $1 == api ]] || { echo "unexpected gh command: $*" >&2; exit 1; }
+shift
+path=
+for arg in "$@"; do
+  [[ $arg == repos/* || $arg == user ]] && path=$arg
+done
+[[ -n $path ]] || exit 1
+if [[ $path == user ]]; then printf 'tester\n'; exit 0; fi
+if [[ $path == *'/releases/tags/'* ]]; then
+  [[ ${FAKE_IMMUTABLE:-true} == true ]] || exit 1
+  printf '%s\n' "${path##*/}"
+  exit 0
+fi
+if [[ $path == *'/git/ref/tags/'* ]]; then
+  tag=${path##*/}
+  sha=1111111111111111111111111111111111111111
+  [[ ${FAKE_MIXED:-0} == 1 && $tag == *ubuntu* ]] && sha=2222222222222222222222222222222222222222
+  printf 'commit\t%s\n' "$sha"
+  exit 0
+fi
+echo "unexpected API path: $path" >&2
+exit 1
