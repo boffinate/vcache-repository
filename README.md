@@ -8,6 +8,8 @@ This repository provides signed Debian and RPM packages for Varnish Cache 9.0.3,
 
 Browse the published repositories, including the current package list for each target, at `https://packages.boffinate.com/vinyl-cache/`.
 
+Read the [package release notes](CHANGELOG.md) for new or retired packages, compatibility changes, and actions to take before upgrading. Changes marked Unreleased are not yet published.
+
 Packages are served from `https://packages.boffinate.com/vinyl-cache`. The setup steps below install the repository's public signing key, check its fingerprint, and configure your package manager to verify both packages and repository metadata.
 
 The archive-key fingerprint is:

@@ -73,6 +73,12 @@ The publisher writes the public-key object only when it is absent. If it already
 
 ## Publish a release
 
+Review [the package release notes](../CHANGELOG.md) before publication. Keep pending changes under Unreleased. After publication and public-client smoke checks succeed, move the relevant entries under a `YYYY-MM-DD` heading using the publication date, and name the engine version, package revision, and targets that received the change. If targets publish separately, record the actual coverage and leave the rest pending. A producer PR's merge date is not a publication date.
+
+Write notes for package users: what became available or unavailable, what compatibility changed, and what they need to do. For a retirement, distinguish stopping future builds from removing a package from current repository metadata; neither uninstalls an existing package. For an incompatible VMOD update, name the affected VCL API and point readers to migration guidance where available. Link the relevant producer PR for details. Do not list routine CI changes or imply that a successful compatibility check makes a package available.
+
+The README links these notes from both GitHub and the generated repository site. If only the notes change, the link continues to point to the maintained file on GitHub; no site deployment is needed. Keep one copy in this repository rather than duplicating entries in the producer.
+
 The quick path is the maintainer driver, which needs an authenticated `gh` CLI on a maintainer host:
 
 ~~~sh
